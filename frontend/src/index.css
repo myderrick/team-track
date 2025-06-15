@@ -1,0 +1,19 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@import "tailwindcss";
+
+/* Now inject your overrides into Tailwind’s preflight */
+@layer base {
+  html {
+    /* 0.95 × 16px = 15.2px base, so all rems shrink 5% */
+    font-size: 90%;
+  }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background-color: #d2eaff
+      /* Tailwind's bg-gray-100 */
+    ;
+    font-size: 80% !important;
+  }
+}

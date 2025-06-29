@@ -10,10 +10,53 @@
   }
 
   body {
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: 'Inter', system-ui, sans-serif !important;
     background-color: #d2eaff
       /* Tailwind's bg-gray-100 */
     ;
     font-size: 80% !important;
+  }
+
+  .MuiTypography-root {
+    font-family: 'Inter', system-ui, sans-serif !important;
+  }
+
+  .MuiButton-root {
+    font-family: 'Inter', system-ui, sans-serif !important;
+  }
+
+  .MuiInputBase-root {
+    font-family: 'Inter', system-ui, sans-serif !important;
+  }
+
+  .MuiInputLabel-root {
+    font-family: 'Inter', system-ui, sans-serif !important;
+  }
+
+  .MuiFormControl-root {
+    font-family: 'Inter', system-ui, sans-serif !important;
+  }
+
+  .MuiFormHelperText-root {
+    font-family: 'Inter', system-ui, sans-serif !important;
+  }
+
+  .MuiCheckbox-root {
+    font-family: 'Inter', system-ui, sans-serif !important;
+  }
+
+  /* MUI input overrides */
+  .MuiInputBase-input {
+    font-family: 'Inter', system-ui, sans-serif !important;
+    font-size: 0.80rem !important;
+    /* 14px */
+  }
+
+  /* MUI button overrides */
+  .MuiButton-root {
+    font-family: 'Inter', system-ui, sans-serif !important;
+    font-size: 0.80rem !important;
+    /* 14px */
+    text-transform: none !important;
   }
 }

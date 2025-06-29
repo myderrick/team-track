@@ -1,0 +1,45 @@
+/* Css for all components */
+/* font */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@layer base {
+    html {
+        /* 0.95 × 16px = 15.2px base, so all rems shrink 5% */
+        font-size: 90%;
+    }
+
+    body {
+        font-family: 'Inter', system-ui, sans-serif;
+        background-color: #e8f0f9 !important
+            /* Tailwind's bg-blue-100 */
+            /* Tailwind's bg-gray-100 */
+        ;
+        font-size: 80% !important;
+    }
+
+    /* Button styles */
+    .MuiButton-root {
+        font-family: 'Inter', system-ui, sans-serif !important;
+        font-size: 0.80rem !important;
+        /* 14px */
+        text-transform: none !important;
+        border-radius: 24px !important;
+        /* 12px */
+    }
+
+    .MuiTab-root {
+        font-family: 'Inter', system-ui, sans-serif !important;
+        font-size: 0.80rem !important;
+        /* 14px */
+        text-transform: none !important;
+        /* 12px */
+    }
+
+    .tabsContainer {
+        position: sticky;
+        top: 0;
+        background: var(--mui-palette-background-paper);
+        z-index: 10;
+    }
+
+}

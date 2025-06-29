@@ -1,5 +1,6 @@
 export default {
   darkMode: 'class', // 👈 enables manual dark mode toggling
+    // prefix: 'tw-', // Add th
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",

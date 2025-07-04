@@ -249,7 +249,7 @@ export default function PerformanceReviewsPage() {
 
                         </Paper>
 
-                        <Stack direction="row" alignItems="center" justifyContent="space-between" mt={2}>
+                        <Stack direction="row" alignItems="center" justifyContent="space-between" mt={2} bgcolor={"white"}>
                             <Typography variant="h6">
                                 {tab === 0 ? 'Reviews' : '1-on-1s'}
                             </Typography>
@@ -260,7 +260,7 @@ export default function PerformanceReviewsPage() {
                                 sx={{ textTransform: 'none', ml: 2 }}
 
                             >
-                                Schedule {tab === 0 ? 'Review' : '1 on 1'}
+                                Schedule {tab === 0 ? 'Review' : '1-on-1'}
                             </Button>
                         </Stack>
 

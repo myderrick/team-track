@@ -264,7 +264,9 @@ export default function GoalsKpiTracker() {
           group-hover:ml-64              /* expanded sidebar width */
           px-0
           overflow-auto
-        ">                {/* KPI Cards */}
+
+        ">
+                {/* KPI Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">                    {[
                     { title: 'Total KPIs', value: totalKPIs, sparkData: [5, 7, 8, 6, 7, 9, totalKPIs], color: '#6c63ff' },
                     { title: 'On Track', value: onTrack, sparkData: [2, 3, 4, 3, 5, 5, onTrack], color: '#10b981' },

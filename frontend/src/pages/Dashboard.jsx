@@ -17,6 +17,7 @@ import StrategySnapshot from '../components/StrategySnapshot';
 import SmartAlerts from '../components/SmartAlerts';
 import TopBar from '../components/TopBar';
 import Sidebar from '../components/Sidebar';
+import IndividualLeaderboard from '../components/IndividualLeaderBoard';
 
 // Filter options
 const quarterOptions = ['Q1 2025', 'Q2 2025', 'Q3 2025', 'Q4 2025'];
@@ -32,6 +33,8 @@ const kpis = [
 ];
 
 export default function Dashboard() {
+    const [view, setView] = useState('individual'); // 'team' or 'individual'
+
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [darkMode, setDarkMode] = useState(() => {
         const saved = localStorage.getItem('darkMode');
@@ -65,6 +68,22 @@ export default function Dashboard() {
                         <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Dashboard</h1>
                         <p className="text-sm text-gray-500 dark:text-gray-400">Performance overview for May 4, 2025</p>
                     </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            className={`px-3 py-1 rounded-l-lg ${view === 'team' ? 'bg-purple-600 text-white' : 'bg-gray-200'}`}
+                            onClick={() => setView('team')}
+                        >
+                            Team View
+                        </button>
+                        <button
+                            className={`px-3 py-1 rounded-r-lg ${view === 'individual' ? 'bg-purple-600 text-white' : 'bg-gray-200'}`}
+                            onClick={() => setView('individual')}
+                        >
+                            Individual View
+                        </button>
+
+                    </div>
+
                     <div className="mt-4 md:mt-0 flex flex-wrap gap-6 items-center">
                         <select value={quarter} onChange={e => setQuarter(e.target.value)} className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 dark:border-gray-600 focus:outline-none">
                             {quarterOptions.map(q => <option key={q}>{q}</option>)}
@@ -92,34 +111,47 @@ export default function Dashboard() {
           group-hover:ml-64              /* expanded sidebar width */
           px-6
           overflow-auto
-        ">                    {/* KPI Cards Grid */}
-                    <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 mb-6">
+        ">
+                    {view === 'individual' ? (
 
-                        {kpis.map(k => <KpiCard key={k.id} {...k} />)}
-                    </div>
+                        <div className="overflow-auto">
+                            <IndividualLeaderboard
+                                quarter={quarter}
+                                department={department}
+                                location={location}
+                            />
+                        </div>
+                    ) : (
+                        <>
+                            {/* KPI Cards Grid */}
+                            <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 mb-6">
 
-                    {/* Performance & Goal Sections */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6 items-stretch">
-                        <div className="h-full">
-                            <TeamPerformanceChart />
-                        </div>
-                        <div className="h-full">
-                            <GoalProgress quarter={quarter} />
-                        </div>
-                    </div>
-                    {/* Strategy & Alerts full-bleed */}
-                    <div className="-mx-6 px-6 mb-6">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
-                            <div className="md:col-span-2">
-                                <StrategySnapshot quarter={quarter} className="h-full" />
+                                {kpis.map(k => <KpiCard key={k.id} {...k} />)}
                             </div>
-                            <div>
-                                <SmartAlerts className="h-full" />
+
+                            {/* Performance & Goal Sections */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6 items-stretch">
+                                <div className="h-full">
+                                    <TeamPerformanceChart />
+                                </div>
+                                <div className="h-full">
+                                    <GoalProgress quarter={quarter} />
+                                </div>
                             </div>
-                        </div>
-                    </div>
+                            {/* Strategy & Alerts full-bleed */}
+                            <div className="-mx-6 px-6 mb-6">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
+                                    <div className="md:col-span-2">
+                                        <StrategySnapshot quarter={quarter} className="h-full" />
+                                    </div>
+                                    <div>
+                                        <SmartAlerts className="h-full" />
+                                    </div>
+                                </div>
+                            </div>
 
-
+                        </>
+                    )}
                 </main>
 
             </div>

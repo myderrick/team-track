@@ -11,13 +11,13 @@ export default function AuthCallback() {
   useEffect(() => {
     (async () => {
       try {
-        // read where to go next (fallback to saved value or /dashboard)
+        // Figure out where to go after auth
         const next =
           params.get('next') ||
           sessionStorage.getItem('post_auth_redirect') ||
           '/dashboard';
 
-        // show provider errors clearly
+        // Surface provider errors from the URL
         const urlErr = params.get('error_description') || params.get('error');
         if (urlErr) {
           setMsg(urlErr);
@@ -25,7 +25,7 @@ export default function AuthCallback() {
           return;
         }
 
-        // PKCE: exchange ?code= for a session
+        // Exchange ?code= for a session (PKCE / OAuth / magic link code)
         if (params.get('code')) {
           const { error } = await supabase.auth.exchangeCodeForSession(window.location.href);
           if (error) {
@@ -35,32 +35,28 @@ export default function AuthCallback() {
           }
         }
 
-        // Password reset links: type=recovery → send user to reset page
+        // Password recovery links should go to your reset screen
         if (params.get('type') === 'recovery') {
           navigate(`/reset-password?next=${encodeURIComponent(next)}`, { replace: true });
           return;
         }
 
-        // Make sure we actually have a session before going to app
+        // Ensure we actually have a session
         const { data: { session } } = await supabase.auth.getSession();
-        if (user?.email) {
-          await supabase.schema('public')
-            .rpc('link_user_to_employee', { p_email: user.email })
-            .catch(() => {}); // ignore if already linked
-        }
         if (!session) {
           navigate('/login', { replace: true });
           return;
         }
 
+        // Link staff account (safe to ignore errors if already linked)
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.email) {
+          await supabase
+            .schema('public')
+            .rpc('link_user_to_employee', { p_email: user.email })
+            .catch(() => {});
+        }
 
-        // after verifying session:
-const { data: { user } } = await supabase.auth.getUser();
-if (user?.email) {
-  await supabase.schema('public')
-    .rpc('link_user_to_employee', { p_email: user.email })
-    .catch(() => {}); // ignore if already linked
-}
         sessionStorage.removeItem('post_auth_redirect');
         navigate(next, { replace: true });
       } catch (e) {

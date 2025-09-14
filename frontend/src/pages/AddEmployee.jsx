@@ -68,11 +68,28 @@ export default function AddEmployee() {
       });
       if (error) throw error;
 
-      setOkMsg(
-        isEmail(form.email)
-          ? `Saved. Ask the staff to sign up with ${form.email} on the staff portal to set a password.`
-          : 'Employee saved.'
-      );
+     if (isEmail(form.email)) {
+  try {
+     const resp = await fetch('/functions/v1/invite-employee', {
+      method: 'POST',
+       headers: { 'Content-Type': 'application/json' },
+       body: JSON.stringify({
+         email: form.email.trim(),
+         full_name: form.full_name.trim(),
+         org_id: orgId,
+         title: form.title || null
+       })
+     });
+     const payload = await resp.json();
+     if (!resp.ok) throw new Error(payload?.error || 'Invite failed');
+     setOkMsg(`Saved. Invite email sent to ${form.email}.`);
+   } catch (e) {
+     // Don’t block the save if email fails — just tell the admin
+     setOkMsg(`Saved. Could not send invite: ${String(e.message || e)}. You can resend from People later.`);
+   }
+ } else {
+   setOkMsg('Employee saved.');
+ }
       setTimeout(() => nav('/dashboard', { replace: true }), 600);
     } catch (err) {
       setError(String(err?.message || err));

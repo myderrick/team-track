@@ -44,7 +44,7 @@ const [emailStatus, setEmailStatus] = useState('idle'); // 'idle' | 'checking' |
       const { error: signErr } = await supabase.auth.signUp({
         email: email.trim(),
         password,
-        options: { data: { role: 'employee' } },
+        options: { data: { role: 'employee' },  emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent('/staff')}` },
       });
       if (signErr) throw signErr;
 

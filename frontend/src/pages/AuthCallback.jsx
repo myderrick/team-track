@@ -43,6 +43,11 @@ export default function AuthCallback() {
 
         // Make sure we actually have a session before going to app
         const { data: { session } } = await supabase.auth.getSession();
+        if (user?.email) {
+          await supabase.schema('public')
+            .rpc('link_user_to_employee', { p_email: user.email })
+            .catch(() => {}); // ignore if already linked
+        }
         if (!session) {
           navigate('/login', { replace: true });
           return;

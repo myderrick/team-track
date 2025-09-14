@@ -1,160 +1,195 @@
-// src/pages/Dashboard.jsx
-import React, { useState, useEffect } from 'react';
-import {
-    Menu,
-    Search,
-    Bell,
-    Star,
-    Globe,
-    Plus,
-    Sun,
-    Moon
-} from 'lucide-react';
-import TeamPerformanceChart from '../components/TeamPerformanceChart';
-import GoalProgress from '../components/GoalProgress';
-import KpiCard from '../components/KpiCard';
-import StrategySnapshot from '../components/StrategySnapshot';
-import SmartAlerts from '../components/SmartAlerts';
-import TopBar from '../components/TopBar';
-import Sidebar from '../components/Sidebar';
-import IndividualLeaderboard from '../components/IndividualLeaderBoard';
+import React, { useEffect, useState } from 'react';
+import { Plus } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { useOrg } from '@/context/OrgContext';
 
-// Filter options
+import TopBar from '@/components/TopBar';
+import Sidebar from '@/components/Sidebar';
+import OrgSwitcher from '@/components/OrgSwitcher';
+import EmptyState from '@/components/EmptyState';
+
+import IndividualLeaderboard from '@/components/IndividualLeaderBoard';
+import TeamPerformanceChart from '@/components/TeamPerformanceChart';
+import GoalProgress from '@/components/GoalProgress';
+import SmartAlerts from '@/components/SmartAlerts';
+import RecentActivity from '@/components/RecentActivity';
+import AiCoaching from '@/components/AiCoaching';
+
 const quarterOptions = ['Q1 2025', 'Q2 2025', 'Q3 2025', 'Q4 2025'];
-const deptOptions = ['All Departments', 'Sales', 'IT', 'Operations'];
-const locationOptions = ['All Locations', 'Ghana', 'Nigeria', 'Rest of the World'];
-
-// KPI data
-const kpis = [
-    { id: 1, title: 'Revenue Overview', value: '$4.28M', trend: '+12.5%', trendType: 'up', percent: 75 },
-    { id: 2, title: 'Customer Acquisition', value: '1,842', trend: '+8.3%', trendType: 'up', percent: 60 },
-    { id: 3, title: 'Project Efficiency', value: '92.7%', trend: '+3.2%', trendType: 'up', percent: 93 },
-    { id: 4, title: 'Team Performance', value: '84.5%', trend: '-2.1%', trendType: 'down', percent: 85 }
-];
 
 export default function Dashboard() {
-    const [view, setView] = useState('individual'); // 'team' or 'individual'
+  const navigate = useNavigate();
+  const { employeeCount, locations, departments, loading } = useOrg();
 
-    const [sidebarOpen, setSidebarOpen] = useState(false);
-    const [darkMode, setDarkMode] = useState(() => {
-        const saved = localStorage.getItem('darkMode');
-        if (saved !== null) return saved === 'true';
-        return window.matchMedia('(prefers-color-scheme: dark)').matches;
-    });
-    const [quarter, setQuarter] = useState(quarterOptions[1]);
-    const [department, setDepartment] = useState(deptOptions[0]);
-    const [location, setLocation] = useState(locationOptions[0]);
+  const [view, setView] = useState('individual');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => {
+    const saved = localStorage.getItem('darkMode');
+    if (saved !== null) return saved === 'true';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+  const [quarter, setQuarter] = useState(quarterOptions[1]);
+  const [department, setDepartment] = useState('All Departments');
+  const [location, setLocation] = useState('');
 
-    useEffect(() => {
-        document.documentElement.classList.toggle('dark', darkMode);
-        localStorage.setItem('darkMode', darkMode);
-    }, [darkMode]);
+  // sync initial location to first available org location
+  useEffect(() => {
+    if (locations && locations.length > 0) {
+      const first = locations[0];
+      setLocation(first.name || first.country || 'Default');
+    } else if (!loading) {
+      setLocation(''); // no locations yet
+    }
+  }, [locations, loading]);
 
-    return (
-        <div className="flex h-screen overflow-hidden text-gray-800 dark:text-gray-100">
-            <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', darkMode);
+    localStorage.setItem('darkMode', darkMode);
+  }, [darkMode]);
 
-            <div className="flex-1 flex flex-col">
-                {/* Top Bar */}
-                <TopBar
-                    onMenuClick={() => setSidebarOpen(o => !o)}
-                    darkMode={darkMode}
-                    onToggleDark={() => setDarkMode(m => !m)}
-                />
-                {/* Filter Bar */}
-                <div className="flex flex-col md:flex-row items-center justify-between px-6 py-4 bg-white dark:bg-gray-800 sticky top-14 z-10 shadow ml-16 
+  return (
+    <div className="flex h-screen overflow-hidden text-gray-800 dark:text-gray-100">
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
+      <div className="flex-1 flex flex-col">
+        <TopBar
+          onMenuClick={() => setSidebarOpen(o => !o)}
+          darkMode={darkMode}
+          onToggleDark={() => setDarkMode(m => !m)}
+        />
+
+        {/* Filter Bar */}
+        <div className="flex flex-col md:flex-row items-center justify-between px-6 py-4 bg-white dark:bg-gray-800 sticky top-14 z-10 shadow ml-16 
                         group-hover:ml-64 transition-margin duration-200">
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Dashboard</h1>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">Performance overview for May 4, 2025</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <button
-                            className={`px-3 py-1 rounded-l-lg ${view === 'team' ? 'bg-purple-600 text-white' : 'bg-gray-200'}`}
-                            onClick={() => setView('team')}
-                        >
-                            Team View
-                        </button>
-                        <button
-                            className={`px-3 py-1 rounded-r-lg ${view === 'individual' ? 'bg-purple-600 text-white' : 'bg-gray-200'}`}
-                            onClick={() => setView('individual')}
-                        >
-                            Individual View
-                        </button>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Dashboard</h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Performance overview</p>
+          </div>
 
-                    </div>
+          <div className="flex items-center gap-2">
+            <button
+              className={`px-3 py-1 rounded-l-lg ${view === 'team' ? 'bg-purple-600 text-white' : 'bg-gray-200'}`}
+              onClick={() => setView('team')}
+            >
+              Team View
+            </button>
+            <button
+              className={`px-3 py-1 rounded-r-lg ${view === 'individual' ? 'bg-purple-600 text-white' : 'bg-gray-200'}`}
+              onClick={() => setView('individual')}
+            >
+              Individual View
+            </button>
+          </div>
 
-                    <div className="mt-4 md:mt-0 flex flex-wrap gap-6 items-center">
-                        <select value={quarter} onChange={e => setQuarter(e.target.value)} className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 dark:border-gray-600 focus:outline-none">
-                            {quarterOptions.map(q => <option key={q}>{q}</option>)}
-                        </select>
-                        <select value={department} onChange={e => setDepartment(e.target.value)} className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 dark:border-gray-600 focus:outline-none">
-                            {deptOptions.map(d => <option key={d}>{d}</option>)}
-                        </select>
-                        <select value={location} onChange={e => setLocation(e.target.value)} className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 dark:border-gray-600 focus:outline-none">
-                            {locationOptions.map(l => <option key={l}>{l}</option>)}
-                        </select>
-                        <button className="flex items-center gap-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition">
-                            <Plus className="w-4 h-4" /> Add Widget
-                        </button>
-                    </div>
-                </div>
+          <div className="mt-4 md:mt-0 flex flex-wrap gap-3 items-center">
+            <OrgSwitcher />
 
-                {/* Main Content */}
-                <main className="
-          flex-1
-          ml-16                         /* collapsed sidebar width */
+            <select
+              value={quarter}
+              onChange={e => setQuarter(e.target.value)}
+              className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 dark:border-gray-600 focus:outline-none"
+            >
+              {quarterOptions.map(q => <option key={q}>{q}</option>)}
+            </select>
+
+            <select
+              value={department}
+              onChange={e => setDepartment(e.target.value)}
+              className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 dark:border-gray-600 focus:outline-none"
+            >
+              <option>All Departments</option>
+              {(departments || []).map(d => <option key={d}>{d}</option>)}
+            </select>
+
+            <select
+              value={location}
+              onChange={e => setLocation(e.target.value)}
+              disabled={!locations || locations.length === 0}
+              className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 dark:border-gray-600 focus:outline-none disabled:opacity-60"
+            >
+              {(locations || []).length === 0
+                ? <option>No locations</option>
+                : locations.map(l => (
+                    <option key={l.id} value={l.name || l.city || l.country}>
+                      {l.name || [l.city, l.region, l.country].filter(Boolean).join(', ')}
+                    </option>
+                  ))
+              }
+            </select>
+
+            <button className="flex items-center gap-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition">
+              <Plus className="w-4 h-4" /> Add Widget
+            </button>
+          </div>
+        </div>
+
+        {/* Empty-state prompt */}
+        {employeeCount === 0 && (
+          <div className="flex-1
+          ml-16
           mt-4
           mr-4
           mb-4
           transition-margin duration-200
-          group-hover:ml-64              /* expanded sidebar width */
+          group-hover:ml-64
           px-6
-          overflow-auto
-        ">
-                    {view === 'individual' ? (
+          overflow-auto">
+            <EmptyState
+              title="Let’s add your first employee"
+              subtitle="Add someone to unlock leaderboards, goals, and performance insights."
+            >
+              <button
+                onClick={() => navigate('/employees/add')}
+                className="px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700"
+              >
+                Add employee
+              </button>
+            </EmptyState>
+          </div>
+        )}
 
-                        <div className="overflow-auto">
-                            <IndividualLeaderboard
-                                quarter={quarter}
-                                department={department}
-                                location={location}
-                            />
-                        </div>
-                    ) : (
-                        <>
-                            {/* KPI Cards Grid */}
-                            <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 mb-6">
+        {/* Main Content */}
+        <main className="flex-1 ml-16 mt-4 mr-4 mb-4 transition-margin duration-200 group-hover:ml-64 px-6 overflow-auto">
+          {view === 'individual' ? (
+            employeeCount > 0 ? (
+              <IndividualLeaderboard quarter={quarter} department={department} location={location} />
+            ) : (
+              <EmptyState title="No individual performance data" subtitle="Add employees to populate the leaderboard." />
+            )
+          ) : (
+            <>
+              <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 mb-6">
+                <EmptyState title="No KPIs yet" subtitle="Connect data sources or add KPIs to see cards here." />
+              </div>
 
-                                {kpis.map(k => <KpiCard key={k.id} {...k} />)}
-                            </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6 items-stretch">
+                <div className="h-full">
+                  {employeeCount > 0 ? (
+                    <TeamPerformanceChart data={[]} />
+                  ) : (
+                    <EmptyState title="No team performance" subtitle="Data will appear once employees are active." />
+                  )}
+                </div>
+                <div className="h-full">
+                  {employeeCount > 0 ? (
+                    <GoalProgress quarter={quarter} data={[]} />
+                  ) : (
+                    <EmptyState title="No goals" subtitle="Create goals to see progress here." />
+                  )}
+                </div>
+              </div>
 
-                            {/* Performance & Goal Sections */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6 items-stretch">
-                                <div className="h-full">
-                                    <TeamPerformanceChart />
-                                </div>
-                                <div className="h-full">
-                                    <GoalProgress quarter={quarter} />
-                                </div>
-                            </div>
-                            {/* Strategy & Alerts full-bleed */}
-                            <div className="-mx-6 px-6 mb-6">
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
-                                    <div className="md:col-span-2">
-                                        <StrategySnapshot quarter={quarter} className="h-full" />
-                                    </div>
-                                    <div>
-                                        <SmartAlerts className="h-full" />
-                                    </div>
-                                </div>
-                            </div>
-
-                        </>
-                    )}
-                </main>
-
-            </div>
-        </div>
-    );
+              <div className="-mx-6 px-6 mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
+                  <EmptyState title="No recent activity" />
+                  <EmptyState title="No smart alerts" />
+                  <EmptyState title="No AI coaching yet" />
+                </div>
+              </div>
+            </>
+          )}
+        </main>
+      </div>
+    </div>
+  );
 }

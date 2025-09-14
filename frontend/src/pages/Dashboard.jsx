@@ -8,7 +8,7 @@ import Sidebar from '@/components/Sidebar';
 import OrgSwitcher from '@/components/OrgSwitcher';
 import EmptyState from '@/components/EmptyState';
 
-import IndividualLeaderboard from '@/components/IndividualLeaderBoard';
+import IndividualLeaderboard from '@/components/IndividualLeaderboard';
 import TeamPerformanceChart from '@/components/TeamPerformanceChart';
 import GoalProgress from '@/components/GoalProgress';
 import SmartAlerts from '@/components/SmartAlerts';

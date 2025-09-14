@@ -20,6 +20,7 @@ import NotFound from '@/pages/NotFound';
 import SelfReview from '@/pages/staff/StaffReview';
 import StaffDashboard from '@/pages/staff/StaffDashboard';
 import StaffGoals from '../src/pages/staff/StaffGoals'; 
+import StaffProfile from '@/pages/staff/StaffProfile';
 
 import '@/index.css';
 import StaffRegister from './pages/staff/Register';
@@ -52,7 +53,7 @@ export default function App() {
             <Route path="/selfreview" element={<SelfReview />} />
             <Route path="/staff" element={<StaffDashboard />} />
             <Route path="/staff/register" element={<StaffRegister />} />
-            
+      <Route path="/staff/:employeeId" element={<StaffProfile />} />
             <Route path="/staff/self-review" element={<SelfReview />} />
             <Route path="/staff/goals" element={<StaffGoals />} />
            {/* <Route path="/staff/settings" element={<Settings staffMode />} /> */}

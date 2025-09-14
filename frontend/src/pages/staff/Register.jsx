@@ -24,7 +24,24 @@ export default function StaffRegister() {
     setEmailStatus('checking');
 
     const timer = setTimeout(async () => {
-      const { data, error } = await supabase.schema('public').rpc('validate_employee_email', { p_email: email.trim() });
+// live validator
+const { data, error } = await supabase.rpc('app.validate_employee_email', { p_email: email.trim() });
+
+// after successful sign-up (and session exists):
+if (org) {
+  // Variant A: requires org domain
+  const { error: linkErr } = await supabase.rpc('app.link_user_to_employee', {
+    p_email: email.trim(),
+    p_org_domain: org
+  });
+  if (linkErr) throw linkErr;
+} else {
+  // Variant B: infer single pending row
+  const { error: linkErr } = await supabase.rpc('app.link_user_to_employee', {
+    p_email: email.trim()
+  });
+  if (linkErr) throw linkErr;
+}
       if (myReq !== reqRef.current) return; // ignore stale responses
       if (error) { setEmailStatus('error'); setErr(error.message); }
       else setEmailStatus(data ? 'ok' : 'bad');

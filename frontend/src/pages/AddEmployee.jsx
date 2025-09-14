@@ -55,7 +55,7 @@ export default function AddEmployee() {
 
     try {
       // One RPC that stores the person; no auth user is created here.
-      const { error } = await supabase.schema('public').rpc('add_employee_with_org', {
+      const { error } = await supabase.rpc('app.add_employee_with_org', {
         p_org_id: orgId,
         p_full_name: form.full_name.trim(),
         p_email: isEmail(form.email) ? form.email.trim() : null,

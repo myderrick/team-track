@@ -4,13 +4,17 @@ import { supabase } from '../lib/supabaseClient';
 import AuthLayout from '../components/AuthLayout';
 import { ErrorBanner, Field, MailIcon, LockIcon, EyeIcon, EyeOffIcon } from '../components/AuthBits';
 
+// tiny helper
+const isEmail = (v='') => /\S+@\S+\.\S+/.test(v);
+const emailDomain = (v='') => (v.split('@')[1] || '').toLowerCase();
+
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [remember, setRemember] = useState(true); // UI only; supabase-js persists by default
+  const [remember, setRemember] = useState(true);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -25,25 +29,59 @@ export default function Login() {
     setError('');
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    setBusy(false);
-    if (error) return setError(error.message);
+    if (error) { setBusy(false); return setError(error.message); }
 
-    // Optional: adapt persistence if you want the checkbox to actually control storage.
-    // If you have your client created with localStorage, this is enough as UI.
-    // You could store a flag for future use:
     try { localStorage.setItem('remember_me', remember ? '1' : '0'); } catch {}
 
-    // org membership check
     const userId = data.session?.user?.id;
-    if (!userId) return navigate('/login', { replace: true });
+    if (!userId) { setBusy(false); return navigate('/login', { replace: true }); }
 
-    const { data: orgs, error: orgError } = await supabase.rpc('user_has_org');
-    if (orgError) return setError('Organization check failed: ' + orgError.message);
+    // --------- ORG MEMBERSHIP CHECK (3 passes) ----------
+    // 1) Direct membership via employees table
+    const { data: directOrgs, error: directErr } = await supabase.rpc('user_has_org');
+    if (directErr) throw new Error('Organization check failed: ' + directErr.message);
 
-    if (!orgs || orgs.length === 0) {
+    if (Array.isArray(directOrgs) && directOrgs.length > 0) {
+      setBusy(false);
+      return navigate(from, { replace: true });
+    }
+
+    // 2) Fallback: match by email domain → candidate orgs
+    let candidate = null;
+    if (isEmail(email)) {
+      const domain = emailDomain(email);
+      if (domain) {
+        const { data: domainOrgs, error: domErr } = await supabase.rpc('orgs_by_email_domain', { p_domain: domain });
+        if (domErr) throw new Error('Domain check failed: ' + domErr.message);
+        if (Array.isArray(domainOrgs) && domainOrgs.length === 1) {
+          candidate = domainOrgs[0]; // { organization_id, org_domain }
+        }
+      }
+    }
+
+    if (candidate) {
+      // Optionally stash to help onboarding pick the org quickly
+      try { localStorage.setItem('suggested_org_domain', candidate.org_domain); } catch {}
+      setBusy(false);
       return navigate('/onboarding', { replace: true });
     }
-    navigate(from, { replace: true });
+
+    // 3) Nothing found → onboarding
+    setBusy(false);
+    return navigate('/onboarding', { replace: true });
+  }
+
+  // smart hint: if the email matches a *pending* employee, suggest staff/register
+  async function checkEmployeeInvite(v) {
+    if (!isEmail(v)) return;
+    const { data, error } = await supabase.rpc('lookup_employee_invite', { p_email: v });
+    if (error) return; // soft-fail
+
+    if (Array.isArray(data) && data.length) {
+      const row = data[0];
+      const params = new URLSearchParams({ email: v, org: row.org_domain });
+      window.location.href = `/staff/register?${params.toString()}`;
+    }
   }
 
   async function signInWithGoogle() {
@@ -75,6 +113,7 @@ export default function Login() {
               onChange={(e) => setEmail(e.target.value)}
               required
               autoComplete="email"
+              onBlur={(e) => checkEmployeeInvite(e.target.value)}
             />
           </div>
         </Field>
@@ -123,7 +162,6 @@ export default function Login() {
           {busy ? 'Signing in…' : 'Sign In'}
         </button>
 
-        {/* Divider */}
         <div className="flex items-center gap-3 text-xs text-gray-500">
           <div className="h-px flex-1 bg-gray-200" />
           <span>or</span>

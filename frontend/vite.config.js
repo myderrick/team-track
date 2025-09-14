@@ -10,4 +10,5 @@ export default defineConfig({
       "@": path.resolve(__dirname, "src"),
     },
   },
+  base: "/", // IMPORTANT for subdomain/root hosting on Vercel
 });

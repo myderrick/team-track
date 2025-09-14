@@ -2,10 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useNavigate } from 'react-router-dom';
 
-const COUNTRIES = ['United States','Canada','United Kingdom','Australia','Germany','France','India','Nigeria','Kenya','Ghana','South Africa'];
-
-const isEmail = (v='') => /\S+@\S+\.\S+/.test(v);
-const emailDomain = (v='') => (v.split('@')[1] || '').toLowerCase();
+const COUNTRIES = [
+  'United States','Canada','United Kingdom','Australia','Germany','France','India','Nigeria','Kenya','Ghana','South Africa'
+  // Add more as you like
+];
 
 export default function Onboarding() {
   const navigate = useNavigate();
@@ -19,11 +19,18 @@ export default function Onboarding() {
   useEffect(() => {
     (async () => {
       const { data: sess } = await supabase.auth.getSession();
-      if (!sess.session) return navigate('/login', { replace: true });
+      if (!sess.session) {
+        return navigate('/login', { replace: true });
+      }
+      // Does the user belong to any org?
+      const { data, error } = await supabase
+        .from('memberships')
+        .select('id')
+        .eq('user_id', sess.session.user.id)
+        .eq('is_active', true)
+        .limit(1);
 
-      // Already in an org?
-      const { data, error } = await supabase.rpc('user_orgs'); // returns role too
-      if (!error && Array.isArray(data) && data.some(r => r.is_active)) {
+      if (!error && data && data.length > 0) {
         setHasOrg(true);
         navigate('/dashboard', { replace: true });
         return;
@@ -35,34 +42,10 @@ export default function Onboarding() {
   async function submit() {
     setError('');
     setBusy(true);
-    try {
-      const { data: sess } = await supabase.auth.getSession();
-      const email = sess.session?.user?.email || '';
-      const domain = isEmail(email) ? emailDomain(email) : null;
-
-      // Call create_org(name, country, domain?)
-      const { error: rpcErr } = await supabase.rpc('create_org', {
-        p_name: name.trim(),
-        p_country: country,
-        p_domain: domain // can be null; backend derives when null
-      });
-      if (rpcErr) throw rpcErr;
-
-      // Optional verification (confirms owner/admin assignment)
-      const { data: orgs, error: orgErr } = await supabase.rpc('user_orgs');
-      if (orgErr) throw orgErr;
-
-      const ownerOrAdmin = (orgs || []).find(r => r.is_active && (r.role === 'owner' || r.role === 'admin'));
-      if (!ownerOrAdmin) {
-        throw new Error('Organization created but membership role not assigned correctly.');
-      }
-
-      navigate('/dashboard', { replace: true });
-    } catch (e) {
-      setError(String(e?.message || e));
-    } finally {
-      setBusy(false);
-    }
+    const { error } = await supabase.rpc('create_org', { p_name: name.trim(), p_country: country });
+    setBusy(false);
+    if (error) return setError(error.message);
+    navigate('/dashboard', { replace: true });
   }
 
   if (loading) return <div className="p-6">Checking your account…</div>;

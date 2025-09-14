@@ -10,7 +10,7 @@ export default function StaffRegister() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
-const [emailStatus, setEmailStatus] = useState('idle'); // 'idle' | 'checking' | 'ok' | 'bad' | 'error'
+  const [emailStatus, setEmailStatus] = useState('idle'); // 'idle' | 'checking' | 'ok' | 'bad' | 'error'
   const reqRef = useRef(0);
 
   // Live validate email against app.employees
@@ -24,8 +24,8 @@ const [emailStatus, setEmailStatus] = useState('idle'); // 'idle' | 'checking' |
     setEmailStatus('checking');
 
     const timer = setTimeout(async () => {
- const { data, error } = await supabase.schema('public').rpc('validate_employee_email', { p_email: email.trim() });
-      if (myReq !== reqRef.current) return; // ignore stale
+      const { data, error } = await supabase.schema('public').rpc('validate_employee_email', { p_email: email.trim() });
+      if (myReq !== reqRef.current) return; // ignore stale responses
       if (error) { setEmailStatus('error'); setErr(error.message); }
       else setEmailStatus(data ? 'ok' : 'bad');
     }, 300); // debounce
@@ -40,23 +40,37 @@ const [emailStatus, setEmailStatus] = useState('idle'); // 'idle' | 'checking' |
     setBusy(true); setErr(''); setMsg('');
 
     try {
-      // 1) Create credentials
+      // 1) Create credentials (or handle "already registered")
+      const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent('/staff')}`;
+
       const { error: signErr } = await supabase.auth.signUp({
         email: email.trim(),
         password,
-        options: { data: { role: 'employee' },  emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent('/staff')}` },
+        options: { data: { role: 'employee' }, emailRedirectTo: redirectTo },
       });
+
+      // If the user is already registered, offer a magic link instead of failing hard
+      if (signErr && /already\s+registered/i.test(signErr.message || '')) {
+        const { error: otpErr } = await supabase.auth.signInWithOtp({
+          email: email.trim(),
+          options: { emailRedirectTo: redirectTo },
+        });
+        if (otpErr) throw otpErr;
+        setMsg('You already have an account. We sent a sign-in link to your email.');
+        return;
+      }
+
       if (signErr) throw signErr;
 
-      // If email confirmations are ON, you might not have a session yet.
+      // 2) If confirmations are ON, there may be no session yet
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         setMsg('Check your inbox to confirm your email, then sign in.');
         return;
       }
 
-      // 2) Link this user to the pre-created employee row & org
-const { error: linkErr } = await supabase.schema('public').rpc('link_user_to_employee', { p_email: email.trim() });
+      // 3) Link this user to the pre-created employee row & org
+      const { error: linkErr } = await supabase.schema('public').rpc('link_user_to_employee', { p_email: email.trim() });
       if (linkErr) throw linkErr;
 
       setMsg('Account created and linked. Redirecting…');
@@ -102,6 +116,8 @@ const { error: linkErr } = await supabase.schema('public').rpc('link_user_to_emp
           className="w-full border rounded p-3"
           value={password}
           onChange={(e)=>setPassword(e.target.value)}
+          minLength={6}
+          autoComplete="new-password"
         />
 
         <button disabled={!canSubmit} className="w-full bg-black text-white rounded p-3 disabled:opacity-50">

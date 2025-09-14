@@ -53,6 +53,14 @@ export default function AuthCallback() {
           return;
         }
 
+
+        // after verifying session:
+const { data: { user } } = await supabase.auth.getUser();
+if (user?.email) {
+  await supabase.schema('public')
+    .rpc('link_user_to_employee', { p_email: user.email })
+    .catch(() => {}); // ignore if already linked
+}
         sessionStorage.removeItem('post_auth_redirect');
         navigate(next, { replace: true });
       } catch (e) {

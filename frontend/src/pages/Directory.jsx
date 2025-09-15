@@ -143,7 +143,7 @@ export default function Directory() {
                 {filtered.map(u => (
                   <Link
                     key={u.id}
-                    to={`/profile/${u.id}`}
+                    to={`/staff/${u.id}`}
                     className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 hover:shadow-md transition"
                   >
                     <div className="font-medium">{u.full_name}</div>

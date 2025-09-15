@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabaseClient';
 import AuthLayout from '../components/AuthLayout';
 import { ErrorBanner, Field, MailIcon, LockIcon, EyeIcon, EyeOffIcon } from '../components/AuthBits';
 
-// tiny helper
+// helpers
 const isEmail = (v='') => /\S+@\S+\.\S+/.test(v);
 const emailDomain = (v='') => (v.split('@')[1] || '').toLowerCase();
 
@@ -28,59 +28,60 @@ export default function Login() {
     setBusy(true);
     setError('');
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) { setBusy(false); return setError(error.message); }
-
+    // 0) Auth
+    const { data, error: authErr } = await supabase.auth.signInWithPassword({ email, password });
+    if (authErr) { setBusy(false); return setError(authErr.message); }
     try { localStorage.setItem('remember_me', remember ? '1' : '0'); } catch {}
 
     const userId = data.session?.user?.id;
     if (!userId) { setBusy(false); return navigate('/login', { replace: true }); }
 
-    // --------- ORG MEMBERSHIP CHECK (3 passes) ----------
-    // 1) Direct membership via employees table
-    const { data: directOrgs, error: directErr } = await supabase.rpc('user_has_org');
-    if (directErr) throw new Error('Organization check failed: ' + directErr.message);
+    try {
+      // 1) Is this user already in any org?
+      const { data: orgs, error: orgsErr } = await supabase.rpc('user_orgs');
+      if (orgsErr) throw orgsErr;
+      if (Array.isArray(orgs) && orgs.some(o => o.is_active)) {
+        setBusy(false);
+        return navigate(from, { replace: true });
+      }
 
-    if (Array.isArray(directOrgs) && directOrgs.length > 0) {
-      setBusy(false);
-      return navigate(from, { replace: true });
-    }
-
-    // 2) Fallback: match by email domain → candidate orgs
-    let candidate = null;
-    if (isEmail(email)) {
-      const domain = emailDomain(email);
-      if (domain) {
-        const { data: domainOrgs, error: domErr } = await supabase.rpc('orgs_by_email_domain', { p_domain: domain });
-        if (domErr) throw new Error('Domain check failed: ' + domErr.message);
-        if (Array.isArray(domainOrgs) && domainOrgs.length === 1) {
-          candidate = domainOrgs[0]; // { organization_id, org_domain }
+      // 2) Silent check: pending employee invite for this email?
+      if (isEmail(email)) {
+        const { data: invites, error: invErr } = await supabase.rpc('lookup_employee_invite', { p_email: email });
+        if (invErr) {
+          // soft-fail; continue flow
+          console.warn('lookup_employee_invite RPC failed:', invErr);
+        } else if (Array.isArray(invites) && invites.length > 0) {
+          const row = invites[0]; // { employee_id, organization_id, org_domain, status }
+          setBusy(false);
+          const params = new URLSearchParams({ email, org: row.org_domain || '' });
+          return (window.location.href = `/staff/register?${params.toString()}`);
         }
       }
-    }
 
-    if (candidate) {
-      // Optionally stash to help onboarding pick the org quickly
-      try { localStorage.setItem('suggested_org_domain', candidate.org_domain); } catch {}
+      // 3) Domain → candidate org
+      let suggested = null;
+      if (isEmail(email)) {
+        const dom = emailDomain(email);
+        if (dom) {
+          const { data: domainHits, error: domErr } = await supabase.rpc('orgs_by_email_domain', { p_domain: dom });
+          if (domErr) console.warn('orgs_by_email_domain RPC failed:', domErr);
+          else if (Array.isArray(domainHits) && domainHits.length === 1) {
+            suggested = domainHits[0]; // { organization_id, org_domain, org_name }
+          }
+        }
+      }
+      if (suggested?.org_domain) {
+        try { localStorage.setItem('suggested_org_domain', suggested.org_domain); } catch {}
+      }
+
+      // 4) Onboarding (no prompts)
       setBusy(false);
       return navigate('/onboarding', { replace: true });
-    }
-
-    // 3) Nothing found → onboarding
-    setBusy(false);
-    return navigate('/onboarding', { replace: true });
-  }
-
-  // smart hint: if the email matches a *pending* employee, suggest staff/register
-  async function checkEmployeeInvite(v) {
-    if (!isEmail(v)) return;
-    const { data, error } = await supabase.rpc('lookup_employee_invite', { p_email: v });
-    if (error) return; // soft-fail
-
-    if (Array.isArray(data) && data.length) {
-      const row = data[0];
-      const params = new URLSearchParams({ email: v, org: row.org_domain });
-      window.location.href = `/staff/register?${params.toString()}`;
+    } catch (e) {
+      console.error('post-login routing error', e);
+      setBusy(false);
+      setError(String(e?.message || e));
     }
   }
 
@@ -113,7 +114,6 @@ export default function Login() {
               onChange={(e) => setEmail(e.target.value)}
               required
               autoComplete="email"
-              onBlur={(e) => checkEmployeeInvite(e.target.value)}
             />
           </div>
         </Field>

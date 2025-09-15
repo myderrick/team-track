@@ -18,12 +18,15 @@ export default function AddEmployee() {
     department: '',
     location: '',
     start_date: '',
-    employee_id: ''
+    employee_id: '',
+    manager_id: ''
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [okMsg, setOkMsg] = useState('');
   const [useCustomLocation, setUseCustomLocation] = useState(false);
+   const [managerOpts, setManagerOpts] = useState([]);
+
 
   const locationChoices = useMemo(() => {
     const locs = (locations || [])
@@ -40,6 +43,18 @@ export default function AddEmployee() {
       setForm(f => ({ ...f, location: first }));
     }
   }, [locationChoices, useCustomLocation]);
+
+  // Load manager options for org
+  useEffect(() => {
+    (async () => {
+      if (!orgId) return;
+      let r = await supabase.rpc('org_employee_options', { p_org_id: orgId });
+      if (r.error?.code === 'PGRST202') {
+        r = await supabase.schema('app').rpc('org_employee_options', { p_org_id: orgId });
+      }
+      if (!r.error) setManagerOpts(r.data || []);
+    })();
+  }, [orgId]);
 
   if (!orgId) {
     return (
@@ -65,6 +80,7 @@ export default function AddEmployee() {
         p_start_date: form.start_date || null,
         // If your RPC supports it:
         // p_employee_code: form.employee_id || null,
+        p_manager_id: form.manager_id || null,
       });
       if (error) throw error;
 
@@ -152,6 +168,18 @@ export default function AddEmployee() {
                    onChange={(e)=>setForm(f=>({ ...f, employee_id: e.target.value }))}
                    placeholder="e.g., 12345" />
           </div>
+
+                  <div className="md:col-span-2">
+          <label className="block text-sm mb-1">Manager (optional)</label>
+           <select
+             className="w-full rounded-xl border border-gray-300 p-3 bg-white"
+             value={form.manager_id || ''}
+             onChange={(e)=>setForm(f=>({...f, manager_id: e.target.value || ''}))}
+           >
+             <option value="">— None —</option>
+             {managerOpts.map(m => <option key={m.id} value={m.id}>{m.full_name}</option>)}
+           </select>
+         </div>
 
           <div className="md:col-span-2">
             <label className="block text-sm mb-1">Location</label>

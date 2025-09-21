@@ -12,6 +12,7 @@ function initialsFrom(nameOrEmail = "") {
 
 export default function Avatar({ src, name, size = 32, className = "" }) {
   const [error, setError] = React.useState(false);
+   React.useEffect(() => { setError(false); }, [src]); 
   const showImg = src && !error;
 
   return (

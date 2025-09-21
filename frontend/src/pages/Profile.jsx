@@ -3,15 +3,24 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Mail, Building2, Shield, Globe, Save, Loader2, User as UserIcon
+  ArrowLeft, Mail, Building2, Shield, Globe, Save, Loader2, Pencil
 } from 'lucide-react';
+import AvatarUploader from '@/components/AvatarUploader';
 
-/* ------------------ small helpers ------------------ */
-function AvatarCircle({ name }) {
+function AvatarCircle({ name, src }) {
   const initials = (name || 'U').split(/\s+/).slice(0,2).map(s => s[0]).join('').toUpperCase();
   return (
-    <div className="h-14 w-14 rounded-full bg-white/10 ring-1 ring-white/20 flex items-center justify-center text-xl font-semibold">
-      {initials}
+    <div className="relative">
+      {src ? (
+        <img src={src} alt="avatar" className="h-16 w-16 rounded-full ring-2 ring-white/30 object-cover" />
+      ) : (
+        <div className="h-16 w-16 rounded-full bg-white/10 ring-1 ring-white/20 flex items-center justify-center text-2xl font-semibold">
+          {initials}
+        </div>
+      )}
+      <div className="absolute -bottom-1 -right-1">
+        {/* reserved for the edit button placement in parent */}
+      </div>
     </div>
   );
 }
@@ -74,20 +83,20 @@ function normalizeOrg(row = {}) {
     is_active: row.is_active ?? false,
   };
 }
-/* --------------------------------------------------- */
 
 export default function Profile() {
   const nav = useNavigate();
 
   const [loading, setLoading] = useState(true);
-  const [acct, setAcct] = useState({ email: '', name: '' });
+  const [acct, setAcct] = useState({ email: '', name: '', avatar_url: '' });
   const [pw, setPw] = useState({ a:'', b:'' });
   const [savingName, setSavingName] = useState(false);
   const [changingPw, setChangingPw] = useState(false);
   const [err, setErr] = useState('');
   const [msg, setMsg] = useState('');
+  const [avatarOpen, setAvatarOpen] = useState(false);
 
-  const [orgs, setOrgs] = useState([]);      // all user orgs
+  const [orgs, setOrgs] = useState([]);
   const activeOrg = useMemo(() => orgs.find(o => o.is_active) || orgs[0] || null, [orgs]);
 
   const [initialName, setInitialName] = useState('');
@@ -100,11 +109,12 @@ export default function Profile() {
 
       const email = sess.session.user.email || '';
       const name = sess.session.user.user_metadata?.full_name || '';
-      setAcct({ email, name });
+      const avatar_url = sess.session.user.user_metadata?.avatar_url || '';
+      setAcct({ email, name, avatar_url });
       setInitialName(name);
 
-      let resp = await rpcSafe('user_orgs');
-      const rows = Array.isArray(resp.data) ? resp.data.map(normalizeOrg) : [];
+      const r = await rpcSafe('user_orgs');
+      const rows = Array.isArray(r.data) ? r.data.map(normalizeOrg) : [];
       setOrgs(rows);
       setLoading(false);
     })();
@@ -145,6 +155,25 @@ export default function Profile() {
     }
   }
 
+  async function setActiveOrg(id) {
+    const r = await rpcSafe('set_active_org', { p_org_id: id });
+    if (r.error) return setErr(r.error.message);
+    const r2 = await rpcSafe('user_orgs');
+    const rows = Array.isArray(r2.data) ? r2.data.map(normalizeOrg) : [];
+    setOrgs(rows);
+    setMsg('Active organization updated.');
+  }
+
+  async function leaveOrg(id) {
+    if (!confirm('Are you sure you want to leave this organization?')) return;
+    const r = await rpcSafe('leave_org', { p_org_id: id });
+    if (r.error) return setErr(r.error.message);
+    const r2 = await rpcSafe('user_orgs');
+    const rows = Array.isArray(r2.data) ? r2.data.map(normalizeOrg) : [];
+    setOrgs(rows);
+    setMsg('You left the organization.');
+  }
+
   if (loading) return <Skeleton />;
 
   return (
@@ -160,7 +189,17 @@ export default function Profile() {
           </button>
 
           <div className="mt-4 flex items-center gap-5">
-            <AvatarCircle name={acct.name || acct.email} />
+            <div className="relative">
+              <AvatarCircle name={acct.name || acct.email} src={acct.avatar_url} />
+              <button
+                onClick={()=>setAvatarOpen(true)}
+                className="absolute -bottom-1 -right-1 p-1.5 rounded-full bg-white/90 text-gray-800 shadow hover:bg-white"
+                title="Edit avatar"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
             <div className="flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-2xl sm:text-3xl font-semibold">{acct.name || 'Your profile'}</h1>
@@ -222,23 +261,53 @@ export default function Profile() {
                     <div className="mt-1 font-medium">{activeOrg.role || '—'}</div>
                   </div>
                 </div>
-                {orgs.length > 1 && (
-                  <div className="rounded-xl border p-4">
-                    <div className="text-xs text-gray-500 mb-2">Other organizations</div>
-                    <ul className="text-sm space-y-1">
-                      {orgs.filter(o => o.id !== activeOrg.id).map(o => (
-                        <li key={o.id} className="flex items-center gap-2">
-                          <Building2 className="w-4 h-4 text-gray-400" />
-                          <span className="font-medium">{o.name}</span>
-                          {o.role && <span className="text-gray-500">— {o.role}</span>}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
               </div>
             ) : (
               <p className="text-sm text-gray-600">You aren’t in any organization yet.</p>
+            )}
+          </Section>
+        </Card>
+
+        {/* Manage organizations */}
+        <Card className="lg:col-span-2">
+          <Section
+            title="Manage organizations"
+            subtitle="Switch your active organization or leave one you no longer belong to."
+          >
+            {orgs.length === 0 ? (
+              <p className="text-sm text-gray-600">No organizations found.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-500">
+                      <th className="py-2">Name</th>
+                      <th className="py-2">Domain</th>
+                      <th className="py-2">Role</th>
+                      <th className="py-2">Active</th>
+                      <th className="py-2 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {orgs.map(o => (
+                      <tr key={o.id} className="border-t">
+                        <td className="py-2">{o.name}</td>
+                        <td className="py-2 text-gray-500">{o.domain || '—'}</td>
+                        <td className="py-2">{o.role || '—'}</td>
+                        <td className="py-2">{o.is_active ? 'Yes' : 'No'}</td>
+                        <td className="py-2 text-right space-x-2">
+                          {!o.is_active && (
+                            <button onClick={()=>setActiveOrg(o.id)} className="px-3 py-1.5 rounded-lg border">Make active</button>
+                          )}
+                          {o.role !== 'owner' && (
+                            <button onClick={()=>leaveOrg(o.id)} className="px-3 py-1.5 rounded-lg border text-red-600">Leave</button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </Section>
         </Card>
@@ -282,7 +351,11 @@ export default function Profile() {
         <div className="pointer-events-auto bg-white/90 backdrop-blur rounded-2xl shadow-lg px-4 py-3 border flex items-center gap-3">
           <span className="text-sm">{isDirty ? 'You have unsaved changes' : 'All changes saved'}</span>
           <button
-            onClick={()=>setAcct(a=>({...a, name: initialName}))}
+            onClick={async () => {
+              const { data: sess } = await supabase.auth.getSession();
+              const name = sess.session?.user?.user_metadata?.full_name || '';
+              setAcct(a => ({ ...a, name }));
+            }}
             disabled={!isDirty || savingName}
             className="px-3 py-2 rounded-lg border text-sm disabled:opacity-50"
           >
@@ -298,6 +371,13 @@ export default function Profile() {
           </button>
         </div>
       </div>
+
+      {/* Avatar modal */}
+      <AvatarUploader
+        open={avatarOpen}
+        onClose={()=>setAvatarOpen(false)}
+        onUploaded={(url)=>setAcct(a=>({...a, avatar_url: url}))}
+      />
     </div>
   );
 }

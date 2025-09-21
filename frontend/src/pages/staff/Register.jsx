@@ -1,6 +1,7 @@
 // src/pages/staff/Register.jsx
 import React, { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { redeemJoinCode } from '../../utils/rpsSafe';
 
 const isEmail = (v='') => /\S+@\S+\.\S+/.test(v);
 
@@ -12,6 +13,7 @@ export default function StaffRegister() {
   const [err, setErr] = useState('');
   const [emailStatus, setEmailStatus] = useState('idle'); // 'idle' | 'checking' | 'ok' | 'bad' | 'error'
   const reqRef = useRef(0);
+  const [joinCode, setJoinCode] = useState('');
 
   // Live validate email against app.employees
   useEffect(() => {
@@ -81,6 +83,15 @@ if (org) {
 
       // 2) If confirmations are ON, there may be no session yet
       const { data: { session } } = await supabase.auth.getSession();
+      if (joinCode.trim()) {
+       if (session) {
+         const r = await redeemJoinCode(joinCode);
+         if (r.error) throw r.error;
+       } else {
+         // Redeem later on callback after confirmation
+         localStorage.setItem('pending_join_code', joinCode.trim());
+       }
+     }
       if (!session) {
         setMsg('Check your inbox to confirm your email, then sign in.');
         return;
@@ -136,6 +147,18 @@ if (org) {
           minLength={6}
           autoComplete="new-password"
         />
+
+        <div>
+          <label className="block text-sm mb-1">Company join code (optional)</label>
+          <input
+            className="w-full border rounded p-3"
+            value={joinCode}
+            onChange={(e)=>setJoinCode(e.target.value)}
+            placeholder="e.g., 9K3QX7PA"
+            autoComplete="one-time-code"
+          />
+          <p className="text-xs text-gray-500 mt-1">Ask your admin if you don’t have one.</p>
+        </div>
 
         <button disabled={!canSubmit} className="w-full bg-black text-white rounded p-3 disabled:opacity-50">
           {busy ? 'Creating…' : 'Create account'}

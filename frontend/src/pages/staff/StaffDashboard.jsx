@@ -267,7 +267,7 @@ const [quarter, setQuarter] = useState(currentQuarterLabel());
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-5 mb-6">
                 <div className="flex items-center justify-between mb-3">
                   <div className="text-lg font-semibold">My goals</div>
-                  <a href="/self-review" className="text-sm font-medium text-indigo-600 hover:underline">Start self-review →</a>
+                  <a href="/staff/self-review" className="text-sm font-medium text-indigo-600 hover:underline">Start self-review →</a>
                 </div>
 
                 {rows.length === 0 ? (

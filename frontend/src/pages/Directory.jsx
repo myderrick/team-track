@@ -1,4 +1,4 @@
-// Directory.jsx
+// frontend/src/pages/Directory.jsx
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import TopBar from '@/components/TopBar';

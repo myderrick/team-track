@@ -19,6 +19,9 @@ async function rpcSafe(fn, args) {
 export default function StaffProfile() {
   const nav = useNavigate();
   const { employeeId } = useParams();
+  const [linkBusy, setLinkBusy] = useState(false);
+const [linkEmail, setLinkEmail] = useState('');
+
 
   const [initial, setInitial] = useState(null); // for dirty check
   const [form, setForm] = useState({
@@ -62,10 +65,14 @@ export default function StaffProfile() {
         title: e.title || '',
         manager_name: e.manager_name || '',
         manager_id: e.manager_id || '',
-        location: e.location || ''
+        location: e.location || '',
+        linked_user_id: e.linked_user_id || null,   // <— add
       };
       setForm(next);
       setInitial(next);
+
+      // prefill linking email
+setLinkEmail(e.email || '');
 
       if (e.organization_id) {
         const r2 = await rpcSafe('org_manager_options', {
@@ -82,6 +89,61 @@ export default function StaffProfile() {
   function updateField(key, val) {
     setForm(f => ({ ...f, [key]: val }));
   }
+
+  async function linkNow() {
+  setErr(''); setMsg('');
+  if (!linkEmail.trim()) { setErr('Enter an email to link.'); return; }
+  setLinkBusy(true);
+  try {
+    // try public wrapper first
+    let r = await supabase.rpc('link_user_to_employee_admin', {
+      p_employee_id: employeeId,
+      p_user_email: linkEmail.trim(),
+    });
+
+    // if schema cache error, try calling the app schema directly
+    if (r.error?.code === 'PGRST202' || /schema cache|Could not find the function/i.test(r.error?.message || '')) {
+      r = await supabase.schema('app').rpc('link_user_to_employee_admin', {
+        p_employee_id: employeeId,
+        p_user_email: linkEmail.trim(),
+      });
+    }
+
+    if (r.error) throw r.error;
+
+    setMsg('Linked to account and activated org membership.');
+    // Re-fetch detail so UI reflects the link
+    const d = await rpcSafe('employee_detail', { p_employee_id: employeeId });
+    if (!d.error && Array.isArray(d.data) && d.data[0]) {
+      const e = d.data[0];
+      setForm(f => ({ ...f, linked_user_id: e.linked_user_id || 'linked' }));
+      setInitial(i => ({ ...i, linked_user_id: e.linked_user_id || 'linked' }));
+    } else {
+      setForm(f => ({ ...f, linked_user_id: 'linked' }));
+    }
+  } catch (e) {
+    setErr(String(e?.message || e));
+  } finally {
+    setLinkBusy(false);
+  }
+}
+
+
+async function unlinkNow() {
+  setErr(''); setMsg('');
+  setLinkBusy(true);
+  try {
+    const r = await rpcSafe('unlink_user_from_employee', { p_employee_id: employeeId });
+    if (r.error) throw r.error;
+    setMsg('Unlinked from account.');
+    setForm(f => ({ ...f, linked_user_id: null }));
+  } catch (e) {
+    setErr(String(e?.message || e));
+  } finally {
+    setLinkBusy(false);
+  }
+}
+
 
   async function save() {
     setErr(''); setMsg('');
@@ -274,6 +336,51 @@ export default function StaffProfile() {
             <SummaryRow icon={<Users className="w-4 h-4" />} label="Manager" value={form.manager_name || '—'} />
             <SummaryRow icon={<MapPin className="w-4 h-4" />} label="Location" value={form.location || '—'} />
           </Card>
+<Card>
+  <div className="flex items-center gap-2 mb-3">
+    <IdCard className="w-4 h-4 text-gray-500" />
+    <h3 className="font-medium">Account link</h3>
+  </div>
+
+  {!form.linked_user_id ? (
+    <>
+      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 mb-3">
+        This employee is not linked to a user account. Link them so they can access the staff dashboard.
+      </div>
+      <label className="block mb-2">
+        <div className="text-sm text-gray-600 mb-1">User email</div>
+        <input
+          type="email"
+          className="w-full rounded-xl border p-3"
+          value={linkEmail}
+          onChange={e => setLinkEmail(e.target.value)}
+          placeholder="user@company.com"
+        />
+      </label>
+      <button
+        onClick={linkNow}
+        disabled={linkBusy || !linkEmail.trim()}
+        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-black text-white text-sm disabled:opacity-50"
+      >
+        {linkBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+        {linkBusy ? 'Linking…' : 'Link account'}
+      </button>
+    </>
+  ) : (
+    <>
+      <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800 mb-3">
+        This employee is linked to a user account and can access staff features.
+      </div>
+      <button
+        onClick={unlinkNow}
+        disabled={linkBusy}
+        className="px-3 py-2 rounded-lg border text-sm disabled:opacity-50"
+      >
+        {linkBusy ? 'Unlinking…' : 'Unlink'}
+      </button>
+    </>
+  )}
+</Card>
 
           <Card>
             <h3 className="font-medium mb-2">Tips</h3>

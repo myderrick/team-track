@@ -1,8 +1,10 @@
+// frontend/src/pages/Login.jsx
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import AuthLayout from '../components/AuthLayout';
 import { ErrorBanner, Field, MailIcon, LockIcon, EyeIcon, EyeOffIcon } from '../components/AuthBits';
+import { rpcSafe } from '../utils/rpsSafe';
 
 // helpers
 const isEmail = (v='') => /\S+@\S+\.\S+/.test(v);
@@ -22,69 +24,66 @@ export default function Login() {
   const rawFrom = location.state?.from?.pathname || '/dashboard';
   const from = ['/login', '/signup', '/auth/callback'].includes(rawFrom) ? '/dashboard' : rawFrom;
   const cameFromProtected = Boolean(location.state?.from);
+async function signIn(e) {
+  e.preventDefault();
+  setBusy(true);
+  setError('');
 
-  async function signIn(e) {
-    e.preventDefault();
-    setBusy(true);
-    setError('');
+  // 0) Auth — unchanged
+  const { data, error: authErr } = await supabase.auth.signInWithPassword({ email, password });
+  if (authErr) { setBusy(false); return setError(authErr.message); }
+  try { localStorage.setItem('remember_me', remember ? '1' : '0'); } catch {}
 
-    // 0) Auth
-    const { data, error: authErr } = await supabase.auth.signInWithPassword({ email, password });
-    if (authErr) { setBusy(false); return setError(authErr.message); }
-    try { localStorage.setItem('remember_me', remember ? '1' : '0'); } catch {}
+  const userId = data.session?.user?.id;
+  if (!userId) { setBusy(false); return navigate('/login', { replace: true }); }
 
-    const userId = data.session?.user?.id;
-    if (!userId) { setBusy(false); return navigate('/login', { replace: true }); }
+  try {
+    // 1) Org memberships for this user
+    const rOrgs = await rpcSafe('user_orgs');
+    if (rOrgs.error) throw rOrgs.error;
+    const orgs = Array.isArray(rOrgs.data) ? rOrgs.data : [];
+    const isActiveMember = orgs.some(o => o.is_active);
+    const isAdmin = orgs.some(o => o.is_active && ['owner','admin'].includes(o.role));
 
-    try {
-      // 1) Is this user already in any org?
-      const { data: orgs, error: orgsErr } = await supabase.rpc('user_orgs');
-      if (orgsErr) throw orgsErr;
-      if (Array.isArray(orgs) && orgs.some(o => o.is_active)) {
-        setBusy(false);
-        return navigate(from, { replace: true });
-      }
-
-      // 2) Silent check: pending employee invite for this email?
-      if (isEmail(email)) {
-        const { data: invites, error: invErr } = await supabase.rpc('lookup_employee_invite', { p_email: email });
-        if (invErr) {
-          // soft-fail; continue flow
-          console.warn('lookup_employee_invite RPC failed:', invErr);
-        } else if (Array.isArray(invites) && invites.length > 0) {
-          const row = invites[0]; // { employee_id, organization_id, org_domain, status }
-          setBusy(false);
-          const params = new URLSearchParams({ email, org: row.org_domain || '' });
-          return (window.location.href = `/staff/register?${params.toString()}`);
-        }
-      }
-
-      // 3) Domain → candidate org
-      let suggested = null;
-      if (isEmail(email)) {
-        const dom = emailDomain(email);
-        if (dom) {
-          const { data: domainHits, error: domErr } = await supabase.rpc('orgs_by_email_domain', { p_domain: dom });
-          if (domErr) console.warn('orgs_by_email_domain RPC failed:', domErr);
-          else if (Array.isArray(domainHits) && domainHits.length === 1) {
-            suggested = domainHits[0]; // { organization_id, org_domain, org_name }
-          }
-        }
-      }
-      if (suggested?.org_domain) {
-        try { localStorage.setItem('suggested_org_domain', suggested.org_domain); } catch {}
-      }
-
-      // 4) Onboarding (no prompts)
-      setBusy(false);
-      return navigate('/onboarding', { replace: true });
-    } catch (e) {
-      console.error('post-login routing error', e);
-      setBusy(false);
-      setError(String(e?.message || e));
+    // 2) Employee link(s) (staff) for this user
+    let hasStaff = false;
+    const rEmp = await rpcSafe('employee_my'); // requires the SQL function you created
+    if (!rEmp.error) {
+      const staffRows = Array.isArray(rEmp.data) ? rEmp.data : [];
+      hasStaff = staffRows.length > 0;
+    } else {
+      // soft-fail — don’t block login if function missing
+      console.warn('employee_my RPC failed:', rEmp.error);
     }
-  }
 
+    // 3) Decide destination
+    const fromPath = (location.state?.from?.pathname || '') + '';
+    const cameFromStaff = fromPath.startsWith('/staff');
+    const preferred = localStorage.getItem('preferred_space'); // 'staff' | 'admin'
+
+    let dest = '/onboarding';
+
+    if (isAdmin || isActiveMember) {
+      if (hasStaff && (preferred === 'staff' || cameFromStaff)) {
+        dest = '/staff';
+      } else {
+        // your existing `from` already falls back to '/dashboard'
+        dest = from;
+      }
+    } else if (hasStaff) {
+      dest = '/staff';
+    } else {
+      dest = '/onboarding';
+    }
+
+    setBusy(false);
+    return navigate(dest, { replace: true });
+  } catch (e) {
+    console.error('post-login routing error', e);
+    setBusy(false);
+    setError(String(e?.message || e));
+  }
+}
   async function signInWithGoogle() {
     setError('');
     const redirectTo = `${window.location.origin}/auth/callback`;

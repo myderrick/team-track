@@ -1,3 +1,4 @@
+// frontend/src/components/TeamPerformanceChart.jsx
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend
@@ -6,7 +7,6 @@ import { supabase } from '@/lib/supabaseClient';
 import { useOrg } from '@/context/OrgContext';
 import EmptyState from '@/components/EmptyState';
 
-// Keep familiar colors for common depts, fallback palette for others
 const FIXED_COLORS = {
   Sales: '#2563eb',
   Marketing: '#7c3aed',
@@ -22,60 +22,87 @@ function colorFor(dept, idx) {
   return FIXED_COLORS[dept] || FALLBACK_PALETTE[idx % FALLBACK_PALETTE.length];
 }
 
-export default function TeamPerformanceChart({ className = '', months = 6 }) {
+export default function TeamPerformanceChart({ period, department, location, className = '' }) {
   const { orgId } = useOrg();
-  const [rows, setRows] = useState([]);      // raw RPC rows
+  const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Load from Supabase
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true); setError('');
-      if (!orgId) { setRows([]); setLoading(false); return; }
-      const { data, error } = await supabase
-        .schema('public')
-        .rpc('org_headcount_by_month', { p_org_id: orgId, p_months: months });
+      setRows([]);
+
+      if (!orgId || !period?.start || !period?.end) {
+        setLoading(false);
+        return;
+      }
+
+      const params = {
+        p_org_id: orgId,
+        p_start: period.start.toISOString(),
+        p_end: period.end.toISOString(),
+        p_department: department && department !== 'All Departments' ? department : null,
+        p_location: location && location !== 'All Locations' ? location : null,
+        p_bucket: period.kind === 'year' ? 'month' : 'week',
+      };
+
+      const { data, error } = await supabase.rpc('org_headcount_by_period', params);
 
       if (cancelled) return;
-      if (error) { setError(error.message); setRows([]); }
-      else setRows(data || []);
+
+      if (error) {
+        console.error('[TeamPerformanceChart] RPC error:', error);
+        setError(error.message);
+        setRows([]);
+        setLoading(false);
+        return;
+      }
+
+      setRows(data || []);
       setLoading(false);
     })();
-    return () => { cancelled = true; };
-  }, [orgId, months]);
 
-  // Pivot rows -> [{ month: 'Jan', [dept]: count, ... }, ...]
+    return () => { cancelled = true; };
+  }, [orgId, period?.start, period?.end, period?.kind, department, location]);
+
+  // Normalize label + sort_key regardless of bucket/column names
   const { chartData, deptKeys } = useMemo(() => {
     if (!rows || rows.length === 0) return { chartData: [], deptKeys: [] };
 
-    const monthsOrdered = Array.from(
-      new Set(rows.sort((a, b) => a.sort_key - b.sort_key).map(r => r.month_label))
-    );
+    // Try to detect the label/sort fields once
+    const pickLabel = (r) =>
+      r.label ?? r.month_label ?? r.week_label ?? r.bucket_label ?? r.period_label ?? '—';
+    const pickSort = (r) =>
+      (typeof r.sort_key === 'number' ? r.sort_key : r.sort_key?.valueOf()) ?? r.month_num ?? r.week_num ?? 0;
 
-    const depts = Array.from(new Set(rows.map(r => r.department || 'Unassigned')));
+    const sorted = [...rows].sort((a, b) => pickSort(a) - pickSort(b));
+    const labelsOrdered = Array.from(new Set(sorted.map(pickLabel)));
 
-    const byMonthDept = {};
-    rows.forEach(({ month_label, department, count }) => {
-      const m = month_label;
-      const d = department || 'Unassigned';
-      byMonthDept[m] ??= {};
-      byMonthDept[m][d] = count || 0;
+    const depts = Array.from(new Set(rows.map(r => r.department || 'Unassigned'))).sort();
+
+    const byLabelDept = {};
+    rows.forEach((r) => {
+      const L = pickLabel(r);
+      const d = r.department || 'Unassigned';
+      byLabelDept[L] ??= {};
+      byLabelDept[L][d] = (r.count ?? r.value ?? 0);
     });
 
-    const data = monthsOrdered.map(m => {
-      const row = { month: m };
-      depts.forEach(d => { row[d] = byMonthDept[m]?.[d] ?? 0; });
+    const data = labelsOrdered.map(L => {
+      const row = { period: L };
+      depts.forEach(d => { row[d] = byLabelDept[L]?.[d] ?? 0; });
       return row;
     });
 
     return { chartData: data, deptKeys: depts };
   }, [rows]);
 
-  const hasData = chartData.length > 0 && deptKeys.length > 0 && chartData.some(r => {
-    return deptKeys.some(d => (r[d] ?? 0) > 0);
-  });
+  const hasData =
+    chartData.length > 0 &&
+    deptKeys.length > 0 &&
+    chartData.some(r => deptKeys.some(d => (r[d] ?? 0) > 0));
 
   return (
     <div className={`flex flex-col h-full bg-white dark:bg-gray-800 rounded-2xl shadow border-card-border p-6 ${className}`}>
@@ -92,7 +119,7 @@ export default function TeamPerformanceChart({ className = '', months = 6 }) {
       ) : (
         <ResponsiveContainer width="100%" height={240}>
           <BarChart data={chartData} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
-            <XAxis dataKey="month" stroke="#718096" />
+            <XAxis dataKey="period" stroke="#718096" />
             <YAxis allowDecimals={false} stroke="#718096" />
             <Tooltip />
             <Legend />

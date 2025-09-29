@@ -1,3 +1,4 @@
+// frontend/src/components/IndividualLeaderBoard.jsx
 import React, { useEffect, useMemo, useState } from 'react';
 import { Disclosure } from '@headlessui/react';
 import { supabase } from '@/lib/supabaseClient';
@@ -11,7 +12,7 @@ import FeedbackSkillsCard from '@/components/FeedbackSkillsCard';
 import TrainingCard from '@/components/TrainingCard';
 import EmptyState from '@/components/EmptyState';
 
-export default function IndividualLeaderboard({ quarter, department, location }) {
+export default function IndividualLeaderboard({ period, department, location }) {
   const { orgId } = useOrg();
   const [rows, setRows] = useState([]);    // employees
   const [loading, setLoading] = useState(true);

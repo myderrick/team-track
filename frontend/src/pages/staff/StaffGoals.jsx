@@ -95,7 +95,16 @@ const rows = (data?.goals || []).map(g => ({
     g.category ?? g.meta?.category ?? 'other',
 }));
 
-setGoals(rows);
+const mapGoals = (rows = []) => rows.map(g => ({
+  ...g,
+  title: g.title ?? g.label ?? '',
+  currency_code: g.currency ?? g.currency_code ?? null,
+  target: g.target ?? g.target_value ?? null,
+  self_selected: g.self_selected ?? (g.meta?.self_selected === true),
+  category: g.category ?? g.meta?.category ?? 'other',
+}));
+
+setGoals(mapGoals(rows));
 
         const latestMap = Object.fromEntries(
           (data?.latest_measurements || []).map(m => [

@@ -17,7 +17,7 @@ import Directory from '@/pages/Directory';
 import Settings from '@/pages/Settings';
 import PerformanceReviewsPage from '@/pages/PerformanceReviewsPage';
 import NotFound from '@/pages/NotFound';
-import SelfReview from '@/pages/staff/StaffReview';
+import SelfReview from '@/pages/staff/SelfReview';
 import StaffDashboard from '@/pages/staff/StaffDashboard';
 import StaffGoals from '../src/pages/staff/StaffGoals'; 
 import StaffProfile from '@/pages/staff/StaffProfile';
@@ -53,7 +53,7 @@ export default function App() {
             <Route path="/selfreview" element={<SelfReview />} />
             <Route path="/staff" element={<StaffDashboard />} />
             <Route path="/staff/register" element={<StaffRegister />} />
-      <Route path="/staff/:employeeId" element={<StaffProfile />} />
+            <Route path="/staff/:employeeId" element={<StaffProfile />} />
             <Route path="/staff/self-review" element={<SelfReview />} />
             <Route path="/staff/goals" element={<StaffGoals />} />
            {/* <Route path="/staff/settings" element={<Settings staffMode />} /> */}

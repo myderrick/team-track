@@ -24,18 +24,16 @@ function buildQuarterOptions({ years = 4, clampCurrentYearToCurrentQuarter = fal
       opts.push(`Q${q} ${y}`);
     }
   }
-  return opts.reverse(); // newest first in the dropdown
+  return opts.reverse();
 }
 
-
 function quarterBounds(label) {
-  // label like "Q3 2025"
   const [qStr, yStr] = (label || '').split(' ');
   const year = Number(yStr || new Date().getFullYear());
   const q = Number((qStr || 'Q1').replace('Q','')) || 1;
   const startMonth = (q - 1) * 3;
   const start = new Date(year, startMonth, 1);
-  const end = new Date(year, startMonth + 3, 0); // end of quarter
+  const end = new Date(year, startMonth + 3, 0);
   return { start, end };
 }
 
@@ -57,20 +55,19 @@ export default function StaffDashboard() {
   });
 
   const quarterOptions = useMemo(() => buildQuarterOptions({ years: 4 }), []);
-const [quarter, setQuarter] = useState(currentQuarterLabel());
+  const [quarter, setQuarter] = useState(currentQuarterLabel());
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
 
   const [modalGoal, setModalGoal] = useState(null);
 
-  // core data
-  const [me, setMe] = useState(null);                // my employee row
-  const [manager, setManager] = useState(null);      // manager employee row
-  const [peers, setPeers] = useState([]);            // coworkers sharing my manager
-  const [goals, setGoals] = useState([]);            // assigned goals (with target/unit/measure_type/deadline/meta.currency_code)
-  const [latest, setLatest] = useState({});          // { [goal_id]: { value, measured_at } }
-  const [feedback, setFeedback] = useState([]);      // optional, from app.feedback
+  const [me, setMe] = useState(null);
+  const [manager, setManager] = useState(null);
+  const [peers, setPeers] = useState([]);
+  const [goals, setGoals] = useState([]);
+  const [latest, setLatest] = useState({});
+  const [feedback, setFeedback] = useState([]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
@@ -78,46 +75,53 @@ const [quarter, setQuarter] = useState(currentQuarterLabel());
   }, [darkMode]);
 
   useEffect(() => {
-  let cancel = false;
-  (async () => {
-    try {
-      setLoading(true); setErr('');
+    let cancel = false;
+    (async () => {
+      try {
+        setLoading(true); setErr('');
 
-      const { data, error } = await supabase
-        .schema('public')
-        .rpc('my_dashboard', { p_quarter: quarter });
+        const { data, error } = await supabase
+          .schema('public')
+          .rpc('my_dashboard', { p_quarter: quarter });
 
-      if (cancel) return;
-      if (error) throw error;
+        if (cancel) return;
+        if (error) throw error;
 
-      // Expecting: { me, goals, latest_measurements, manager, peers, feedback }
-      setMe(data?.me || null);
-      setManager(data?.manager || null);
-      setPeers(data?.peers || []);
-      setFeedback(data?.feedback || []);
+        setMe(data?.me || null);
+        setManager(data?.manager || null);
+        setPeers(data?.peers || []);
+        setFeedback(data?.feedback || []);
 
-      // latest: map -> { [goal_id]: { value, measured_at } }
-      const latestMap = Object.fromEntries(
-        (data?.latest_measurements || []).map(m => [
-          m.goal_id,
-          { value: Number(m.value || 0), measured_at: m.measured_at }
-        ])
-      );
-      setLatest(latestMap);
+        const latestMap = Object.fromEntries(
+          (data?.latest_measurements || []).map(m => [
+            m.goal_id,
+            { value: Number(m.value || 0), measured_at: m.measured_at }
+          ])
+        );
+        setLatest(latestMap);
 
-      // goals already normalized by the RPC (id, title, measure_type, unit, currency_code, target, deadline, description, department)
-      setGoals(data?.goals || []);
-    } catch (e) {
-      if (!cancel) setErr(String(e.message || e));
-    } finally {
-      if (!cancel) setLoading(false);
-    }
-  })();
-  return () => { cancel = true; };
-}, [quarter]);
+        // 🔧 Normalize a reliable title so UI can always render it
+        const normalizedGoals = (data?.goals || []).map(g => ({
+          ...g,
+          title:
+            g.title ??
+            g.label ??
+            g.name ??
+            g.goal_title ??
+            g.goal ??
+            g.text ??
+            'Untitled goal',
+        }));
+        setGoals(normalizedGoals);
+      } catch (e) {
+        if (!cancel) setErr(String(e.message || e));
+      } finally {
+        if (!cancel) setLoading(false);
+      }
+    })();
+    return () => { cancel = true; };
+  }, [quarter]);
 
-
-  // Compute statuses
   const rows = useMemo(() => {
     const today = new Date();
     return goals.map(g => {
@@ -131,7 +135,7 @@ const [quarter, setQuarter] = useState(currentQuarterLabel());
 
         if (isOverdue && (pct ?? 0) < 100) status = 'Overdue';
         else if (daysLeft !== null && daysLeft <= 14 && (pct ?? 0) < 70) status = 'At risk';
-        else if ((pct ?? 0) < 40) status = 'Behind'; // simple early warning
+        else if ((pct ?? 0) < 40) status = 'Behind';
       } else if (g.measure_type === 'qualitative') {
         status = 'In progress';
       }
@@ -166,11 +170,9 @@ const [quarter, setQuarter] = useState(currentQuarterLabel());
     return <span className={`px-2 py-1 rounded-full text-xs font-medium ${map[status] || 'bg-gray-100'}`}>{status}</span>;
   }
 
-  
   function logProgress(goal) {
-   setModalGoal(goal);
- }
-
+    setModalGoal(goal);
+  }
 
   return (
     <div className="flex h-screen overflow-hidden text-gray-800 dark:text-gray-100">
@@ -189,28 +191,28 @@ const [quarter, setQuarter] = useState(currentQuarterLabel());
             <p className="text-sm text-gray-500">Personal performance overview</p>
           </div>
           <div className="flex gap-3 items-center">
-           <select
-  value={quarter}
-  onChange={e => setQuarter(e.target.value)}
-  className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600"
->
-  {quarterOptions.map(q => <option key={q}>{q}</option>)}
-</select>
-
+            <select
+              value={quarter}
+              onChange={e => setQuarter(e.target.value)}
+              className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600"
+            >
+              {quarterOptions.map(q => <option key={q}>{q}</option>)}
+            </select>
           </div>
         </div>
-{me &&
-        <UpdateProgressModal
-          open={!!modalGoal}
-          goal={modalGoal}
-          meId={me.id}
-          onClose={() => setModalGoal(null)}
-          onSaved={(value, measuredAt) => {
-            setLatest(s => ({ ...s, [modalGoal.id]: { value, measured_at: measuredAt } }));
-            setModalGoal(null);
-          }}
-        />  
-}
+
+        {me &&
+          <UpdateProgressModal
+            open={!!modalGoal}
+            goal={modalGoal}
+            meId={me.id}
+            onClose={() => setModalGoal(null)}
+            onSaved={(value, measuredAt) => {
+              setLatest(s => ({ ...s, [modalGoal.id]: { value, measured_at: measuredAt } }));
+              setModalGoal(null);
+            }}
+          />
+        }
 
         <main className="flex-1 ml-16 mt-4 mr-4 mb-4 px-6 overflow-auto">
           {loading ? (

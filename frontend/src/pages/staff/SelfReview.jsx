@@ -4,7 +4,21 @@ import Sidebar from '@/components/Sidebar';
 import TopBar from '@/components/TopBar';
 import EmptyState from '@/components/EmptyState';
 import { supabase } from '@/lib/supabaseClient';
-import { Loader2, TrendingUp, Target, DollarSign, Flag, Plus, Check, X } from 'lucide-react';
+import { Loader2, Target, DollarSign, Flag, Plus, Check, X } from 'lucide-react';
+
+// ---------- helpers (module scope) ----------
+const coerceNum = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+// Detect "function is missing" style errors coming from PostgREST
+const FN_MISSING_RE = /(schema cache|Could not find the function|does not exist|No function matches)/i;
+const isFnMissing = (errOrRes) => {
+  const msg = (errOrRes?.error?.message || errOrRes?.message || errOrRes || '').toString();
+  return FN_MISSING_RE.test(msg);
+};
+
 
 function currentQuarterLabel(d = new Date()) {
   const q = Math.floor(d.getMonth() / 3) + 1;
@@ -21,7 +35,6 @@ function buildQuarterOptions({ years = 4 } = {}) {
   }
   return opts.reverse();
 }
-
 async function rpcSafe(name, args) {
   let r = await supabase.rpc(name, args);
   const msg = r.error?.message || '';
@@ -30,24 +43,19 @@ async function rpcSafe(name, args) {
   }
   return r;
 }
-
 async function getLatestProgress(ids, quarter) {
-  // Try the new signature (no quarter)
   let r = await rpcSafe('goal_progress_latest', { p_goal_ids: ids });
   const msg = r.error?.message || '';
-  // If your DB still requires p_quarter, try the old signature
   if (r.error && /does not exist|No function matches|schema cache/i.test(msg)) {
     r = await rpcSafe('goal_progress_latest', { p_goal_ids: ids, p_quarter: quarter });
   }
   return r;
 }
-
 function pct(value, target) {
   if (!target || target <= 0 || value == null) return null;
   const p = Math.max(0, Math.min(1, Number(value) / Number(target)));
   return Math.round(p * 100);
 }
-
 function ProgressBar({ percent }) {
   return (
     <div className="w-full h-2 rounded bg-gray-100 dark:bg-gray-700 overflow-hidden">
@@ -59,6 +67,7 @@ function ProgressBar({ percent }) {
   );
 }
 
+// ---------- page ----------
 export default function SelfReview() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
@@ -74,7 +83,7 @@ export default function SelfReview() {
   const [me, setMe] = useState(null);
 
   // modals
-  const [progressModal, setProgressModal] = useState(null); // { goal, kind, ... }
+  const [progressModal, setProgressModal] = useState(null); // { goal, type, ... }
   const [reviewModal, setReviewModal] = useState(null);     // { goal, review, rating, status }
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
@@ -84,25 +93,30 @@ export default function SelfReview() {
     localStorage.setItem('darkMode', String(darkMode));
   }, [darkMode]);
 
-   useEffect(() => {
+  useEffect(() => {
     let cancel = false;
     (async () => {
       try {
         setLoading(true); setErr('');
-const r = await supabase.schema('public').rpc('my_dashboard');        if (cancel) return;
+        const r = await supabase.schema('public').rpc('my_dashboard');
+        if (cancel) return;
         if (r.error) throw r.error;
 
         setMe(r.data?.me || null);
-       let rows = (r.data?.goals || []).map(normalizeGoal);
-             // If the dashboard already sent latest measurements, merge them now (like Goals.jsx)
-      if (Array.isArray(r.data?.latest_measurements) && r.data.latest_measurements.length > 0) {
-         const pre = new Map(
-           r.data.latest_measurements.map(m => [m.goal_id, { ...m, value: Number(m.value ?? 0) }])
-         );
-         rows = rows.map(g => ({ ...g, latest_measurement: pre.get(g.id) || g.latest_measurement || null }));
-       }
+        let rows = (r.data?.goals || []).map(normalizeGoal);
 
-        // 1) Latest self progress (qualitative or notes you already use)
+        // If the dashboard already sent latest measurements, merge them now
+        if (Array.isArray(r.data?.latest_measurements) && r.data.latest_measurements.length > 0) {
+          const pre = new Map(
+            r.data.latest_measurements.map((m) => [
+              m.goal_id,
+              { goal_id: m.goal_id, value: coerceNum(m.value), measured_at: m.measured_at, note: m.note ?? null },
+            ])
+          );
+          rows = rows.map((g) => ({ ...g, latest_measurement: pre.get(g.id) || g.latest_measurement || null }));
+        }
+
+        // 1) latest self progress
         const ids = rows.map(g => g.id);
         if (ids.length > 0 && rows.some(g => !g.latest_progress)) {
           const r2 = await getLatestProgress(ids, quarter);
@@ -112,24 +126,19 @@ const r = await supabase.schema('public').rpc('my_dashboard');        if (cancel
           }
         }
 
-      // 2) Latest numeric/monetary measurements for "current" value
-       if (ids.length > 0) {
-         // use end-of-quarter as cutoff so the value reflects the same period
-        const [qLabel, qYear] = quarter.split(' ');
-         const q = Number(qLabel.replace('Q',''));
-         const y = Number(qYear);
-         const qEnd = new Date(Date.UTC(
-           y,
-         q * 3,      // first month after the quarter
-          0,          // day 0 of next quarter month = last day of quarter
-          23,59,59,999
-         ));
-        const r3 = await rpcSafe('goal_measurement_latest', { p_goal_ids: ids });
-         if (!r3.error && Array.isArray(r3.data)) {
-          const map = new Map(r3.data.map(x => [x.goal_id, x]));
-           rows = rows.map(g => ({ ...g, latest_measurement: map.get(g.id) || null }));
-         }
-     }
+        // 2) latest measurements
+        if (ids.length > 0) {
+          const r3 = await rpcSafe('goal_measurement_latest', { p_goal_ids: ids });
+          if (!r3.error && Array.isArray(r3.data)) {
+            const map = new Map(
+              r3.data.map((x) => [
+                x.goal_id,
+                { goal_id: x.goal_id, value: coerceNum(x.value), measured_at: x.measured_at, note: x.note ?? null },
+              ])
+            );
+            rows = rows.map((g) => ({ ...g, latest_measurement: map.get(g.id) || g.latest_measurement || null }));
+          }
+        }
 
         setGoals(rows);
       } catch (e) {
@@ -141,7 +150,6 @@ const r = await supabase.schema('public').rpc('my_dashboard');        if (cancel
     return () => { cancel = true; };
   }, []); // no dependency on quarter
 
-
   const assignedGoals = useMemo(
     () => goals.filter(g => !(g.meta?.self_selected === true)),
     [goals]
@@ -151,56 +159,59 @@ const r = await supabase.schema('public').rpc('my_dashboard');        if (cancel
     [goals]
   );
 
+  // map DB -> UI
   function normalizeGoal(row = {}) {
-  // Map DB/API fields to what SelfReview expects
   const type =
     (row.type || row.measure_type || row.meta?.measure_type || '').toLowerCase() || 'qualitative';
-
-  const target_value =
-    row.target_value ?? row.target ?? null;
-
-  const unit =
-    row.unit ?? row.meta?.unit ?? null;
-
-  const currency =
-    row.currency ?? row.currency_code ?? row.meta?.measure_currency ?? null;
-
-  const title =
-    row.title || row.label || row.name || '';
-
-  const description =
-    row.description || row.details || null;
-
-
   return {
     ...row,
-    type,            // 'numeric' | 'monetary' | 'qualitative'
-    target_value,    // number | null
-    unit,            // string | null
-    currency,        // string | null
-    title,
-    description,
+    title: row.title || row.label || row.name || '',
+    description: row.description || row.details || null,
+    type,                                   // 'numeric' | 'monetary' | 'qualitative'
+    target_value: row.target_value ?? row.target ?? null,
+    unit: row.unit ?? row.meta?.unit ?? null,
+    currency: row.currency ?? row.currency_code ?? row.meta?.measure_currency ?? null,
+    latest_measurement: row.latest_measurement
+      ? {
+          goal_id: row.latest_measurement.goal_id ?? row.id,
+          value: coerceNum(row.latest_measurement.value),
+          measured_at: row.latest_measurement.measured_at || null,
+          note: row.latest_measurement.note || null,
+        }
+      : null,
+    latest_progress: row.latest_progress
+      ? {
+          goal_id: row.latest_progress.goal_id ?? row.id,
+          value: coerceNum(row.latest_progress.value),
+          currency: row.latest_progress.currency || null,
+          // be lenient with backend naming
+          qual_status:
+            row.latest_progress.qual_status ??
+            row.latest_progress.status ??
+            row.latest_progress.progress_status ??
+            null,
+          note: row.latest_progress.note || null,
+          created_at: row.latest_progress.created_at || null,
+        }
+      : null,
   };
-
 }
 
 
   function openProgress(goal) {
-  const lp = goal.latest_progress || {};
-  let t = (goal.type || '').toLowerCase();
-
-  if (!t && typeof goal.target_value === 'number') {
-    t = goal.currency ? 'monetary' : 'numeric';
+    const lp = goal.latest_progress || {};
+    let t = (goal.type || '').toLowerCase();
+    if (!t && typeof goal.target_value === 'number') {
+      t = goal.currency ? 'monetary' : 'numeric';
+    }
+    if (t === 'numeric') {
+      setProgressModal({ goal, type: 'numeric', value: lp.value ?? '', note: '' });
+    } else if (t === 'monetary') {
+      setProgressModal({ goal, type: 'monetary', value: lp.value ?? '', currency: goal.currency || lp.currency || '', note: '' });
+    } else {
+      setProgressModal({ goal, type: 'qualitative', qual_status: lp.qual_status || 'in_progress', note: '' });
+    }
   }
-
-  if (t === 'numeric') {
-    setProgressModal({ goal, type: 'numeric', value: lp.value ?? '', note: '' });
-  } else if (t === 'monetary') {
-    setProgressModal({ goal, type: 'monetary', value: lp.value ?? '', currency: goal.currency || lp.currency || '', note: '' });
-  } else {
-    setProgressModal({ goal, type: 'qualitative', qual_status: lp.qual_status || 'in_progress', note: '' });
-  }
-}
 
   function openReview(goal) {
     setReviewModal({
@@ -210,7 +221,8 @@ const r = await supabase.schema('public').rpc('my_dashboard');        if (cancel
       status: 'draft',
     });
   }
-async function saveProgress() {
+
+  async function saveProgress() {
   if (!progressModal) return;
   const { goal, type } = progressModal;
 
@@ -221,7 +233,7 @@ async function saveProgress() {
     const nowIso = new Date().toISOString();
 
     if (type === 'numeric' || type === 'monetary') {
-      // 1) validate & compute value once
+      // validate
       const valueNum = Number(progressModal.value);
       const value = Number.isFinite(valueNum) ? valueNum : null;
       if (value === null) {
@@ -230,7 +242,7 @@ async function saveProgress() {
         return;
       }
 
-      // 2) write measurement (time series)
+      // 1) write measurement (this table/function exists in your DB)
       const m = await rpcSafe('add_goal_measurement', {
         p_goal_id: goal.id,
         p_measured_at: nowIso,
@@ -239,7 +251,7 @@ async function saveProgress() {
       });
       if (m.error) throw new Error(`[add_goal_measurement] ${m.error.message || m.error}`);
 
-      // 3) write journal entry (progress)
+      // 2) try to write progress journal (may not exist in some DBs)
       const r = await rpcSafe('add_goal_progress', {
         p_goal_id: goal.id,
         p_value: value,
@@ -249,9 +261,13 @@ async function saveProgress() {
         p_quarter: null,
         p_measured_at: null,
       });
-      if (r.error) throw new Error(`[add_goal_progress] ${r.error.message || r.error}`);
 
-      // 4) optimistic UI update
+      if (r.error && !isFnMissing(r)) {
+        // real error (not "missing function")
+        throw new Error(`[add_goal_progress] ${r.error.message || r.error}`);
+      }
+
+      // 3) optimistic UI update (works even if journaling RPC is missing)
       setGoals(gs =>
         gs.map(g => {
           if (g.id !== goal.id) return g;
@@ -277,13 +293,15 @@ async function saveProgress() {
         })
       );
 
-      setToast('Progress updated.');
+      setToast(isFnMissing(r)
+        ? 'Measurement saved (progress journal endpoint missing).'
+        : 'Progress updated.');
       setProgressModal(null);
       setTimeout(() => setToast(''), 1500);
       return;
     }
 
-    // Optional: qualitative path (in case you open the modal for qualitative)
+    // qualitative path (requires the journaling RPC)
     if (type === 'qualitative') {
       const r = await rpcSafe('add_goal_progress', {
         p_goal_id: goal.id,
@@ -294,7 +312,15 @@ async function saveProgress() {
         p_quarter: null,
         p_measured_at: null,
       });
-      if (r.error) throw new Error(`[add_goal_progress] ${r.error.message || r.error}`);
+
+      if (r.error) {
+        if (isFnMissing(r)) {
+          throw new Error(
+            'The database RPC app.add_goal_progress is missing. Qualitative updates cannot be saved until this RPC is added.'
+          );
+        }
+        throw new Error(`[add_goal_progress] ${r.error.message || r.error}`);
+      }
 
       setGoals(gs =>
         gs.map(g => {
@@ -326,7 +352,6 @@ async function saveProgress() {
 
 
   async function saveReview() {
-
     if (!reviewModal) return;
     setSaving(true); setErr('');
     try {
@@ -350,9 +375,8 @@ async function saveProgress() {
   }
 
   return (
-    
     <div className="flex h-screen overflow-hidden text-gray-800 dark:text-gray-100">
-      <Sidebar /> {/* auto-detects /staff route -> staff menu */}
+      <Sidebar />
       <div className="flex flex-col flex-1">
         <TopBar
           onMenuClick={() => setSidebarOpen(o => !o)}
@@ -392,7 +416,6 @@ async function saveProgress() {
                 title="Assigned goals"
                 empty="No assigned goals"
                 items={assignedGoals}
-                quarter={quarter}
                 onAddProgress={openProgress}
                 onWriteReview={openReview}
               />
@@ -402,7 +425,6 @@ async function saveProgress() {
                 subtitle="Marked as self-selected"
                 empty="No self-selected goals"
                 items={selfSelectedGoals}
-                quarter={quarter}
                 onAddProgress={openProgress}
                 onWriteReview={openReview}
               />
@@ -516,15 +538,15 @@ async function saveProgress() {
       {reviewModal && (
         <Modal onClose={() => setReviewModal(null)} title="Self-assessment">
           <div className="mb-3 font-medium">{reviewModal.goal.title}</div>
-          {/* Show context of current progress */}
-          {/* Show context of current progress (prefer measurement, fallback to progress) */}
+
+          {/* Context: Target + Current */}
           {reviewModal.goal.type !== 'qualitative' && reviewModal.goal.target_value ? (() => {
             const g = reviewModal.goal;
             const lm = g.latest_measurement || {};
             const lp = g.latest_progress || {};
             const currentVal = lm.value ?? lp.value ?? 0;
             const currentTs  = lm.measured_at ?? lp.created_at ?? null;
-            const unitOrCur  = g.unit || (g.type === 'monetary' ? g.currency : '');
+            const unitOrCur  = g.type === 'monetary' ? (g.currency || lp.currency || '') : (g.unit || '');
             return (
               <div className="mb-3 text-sm text-gray-600">
                 Target: <b>{g.target_value}</b> {unitOrCur}
@@ -587,7 +609,6 @@ async function saveProgress() {
 }
 
 /* ---------- sections & cards ---------- */
-
 function GoalSection({ title, subtitle, empty, items, onAddProgress, onWriteReview }) {
   return (
     <section className="bg-white dark:bg-gray-800 rounded-xl shadow p-5 mb-6">
@@ -608,17 +629,27 @@ function GoalSection({ title, subtitle, empty, items, onAddProgress, onWriteRevi
   );
 }
 function GoalCard({ goal, onAddProgress, onWriteReview }) {
-
   const lp = goal.latest_progress || {};
   const lm = goal.latest_measurement || {};
-  const isQuant = goal.type !== 'qualitative';
-  const currentValue = isQuant
-    ? (lm.value ?? lp.value ?? 0)
-    : null;
+  const isQual = (goal.type || '').toLowerCase() === 'qualitative';
+  const isQuant = !isQual;
+
+  // prefer measurement, then progress; coerce to number
+  const currentValue = isQuant ? (coerceNum(lm.value) ?? coerceNum(lp.value)) : null;
+
   const currentTs = isQuant
     ? (lm.measured_at ?? lp.created_at ?? null)
     : (lp.created_at ?? null);
-  const p = isQuant ? pct(currentValue, goal.target_value) : null;
+
+  const p = isQuant && currentValue != null && goal.target_value != null
+    ? Math.round(Math.max(0, Math.min(1, Number(currentValue) / Number(goal.target_value))) * 100)
+    : null;
+
+  const unitOrCur = goal.type === 'monetary' ? (goal.currency || lp.currency || '') : (goal.unit || '');
+
+  // tolerant status mapping
+  const qualStatusRaw = lp.qual_status || lp.status || lp.progress_status || '';
+  const qualStatus = qualStatusRaw ? qualStatusRaw.replace('_', ' ') : 'not started';
 
   return (
     <div className="rounded-xl border p-4">
@@ -633,38 +664,42 @@ function GoalCard({ goal, onAddProgress, onWriteReview }) {
         </div>
       </div>
 
-      <div className="mt-3 grid sm:grid-cols-3 gap-3 text-sm">
-        {/* Target */}
+      <div className="mt-3 grid sm:grid-cols-2 gap-3 text-sm">
+        {/* Target + Current together */}
         <div className="rounded-lg border p-3">
           <div className="flex items-center gap-2 text-gray-600">
             {goal.type === 'monetary' ? <DollarSign className="w-4 h-4" /> : <Target className="w-4 h-4" />}
             <span>Target</span>
           </div>
+
           <div className="mt-1 font-medium">
-            {goal.type === 'qualitative' ? '—' : (
+            {isQual ? '—' : (
               <>
-                {goal.type === 'monetary' && (goal.currency || lp.currency) ? `${goal.currency || lp.currency} ` : ''}
-                {goal.target_value ?? '—'} {goal.unit || ''}
+                {goal.type === 'monetary' && unitOrCur ? `${unitOrCur} ` : ''}
+                {goal.target_value ?? '—'} {goal.type !== 'monetary' ? unitOrCur : ''}
               </>
             )}
           </div>
-        </div>
 
-        {/* Current */}
-        <div className="rounded-lg border p-3">
-          <div className="flex items-center gap-2 text-gray-600">
-            <TrendingUp className="w-4 h-4" />
-            <span>Current</span>
+          {/* Current */}
+          <div className="mt-3 text-xs text-gray-600">Current</div>
+          <div className="font-medium">
+            {isQual ? (
+              qualStatus
+            ) : (
+              <>
+                {goal.type === 'monetary' && unitOrCur ? `${unitOrCur} ` : ''}
+                {currentValue != null ? new Intl.NumberFormat().format(currentValue) : '—'} {goal.type !== 'monetary' ? unitOrCur : ''}
+              </>
+            )}
           </div>
-          <div className="mt-1 font-medium">
-            {goal.type === 'qualitative'
-              ? (lp.qual_status ? lp.qual_status.replace('_',' ') : 'not started')
-              : <>
-                  {goal.type === 'monetary' && (goal.currency || lp.currency) ? `${goal.currency || lp.currency} ` : ''}
-                 {currentValue ?? 0} {goal.unit || ''}
-                </>
-            }
-          </div>
+
+          {/* For qualitative, also show the latest note right here */}
+          {isQual && lp.note && (
+            <div className="mt-1 text-xs text-gray-500">{lp.note}</div>
+          )}
+
+          {/* Progress bar (quantitative only) */}
           {isQuant && goal.target_value ? (
             <div className="mt-2">
               <ProgressBar percent={p ?? 0} />
@@ -679,8 +714,11 @@ function GoalCard({ goal, onAddProgress, onWriteReview }) {
             <Flag className="w-4 h-4" />
             <span>Last update</span>
           </div>
-         <div className="mt-1 text-sm">{currentTs ? new Date(currentTs).toLocaleString() : '—'}</div>
-          {lp.note && <div className="mt-1 text-xs text-gray-500 line-clamp-2">{lp.note}</div>}
+          <div className="mt-1 text-sm">{currentTs ? new Date(currentTs).toLocaleString() : '—'}</div>
+          {/* Avoid duplicate note: only show here if not qualitative (where we already show it) */}
+          {!isQual && (lm.note || lp.note) && (
+            <div className="mt-1 text-xs text-gray-500 line-clamp-2">{lm.note || lp.note}</div>
+          )}
         </div>
       </div>
     </div>
@@ -688,8 +726,7 @@ function GoalCard({ goal, onAddProgress, onWriteReview }) {
 }
 
 
-/* ---------- modal ---------- */
-
+/* ---------- modal shell ---------- */
 function Modal({ title, onClose, children }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">

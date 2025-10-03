@@ -210,44 +210,108 @@ const r = await supabase.schema('public').rpc('my_dashboard');        if (cancel
       status: 'draft',
     });
   }
-
 async function saveProgress() {
   if (!progressModal) return;
   const { goal, type } = progressModal;
-  setSaving(true); setErr('');
+
+  setSaving(true);
+  setErr('');
+
   try {
-    let payload = { p_goal_id: goal.id, p_quarter: quarter };
+    const nowIso = new Date().toISOString();
+
     if (type === 'numeric' || type === 'monetary') {
-      // write to measurements too (optional but recommended)
+      // 1) validate & compute value once
+      const valueNum = Number(progressModal.value);
+      const value = Number.isFinite(valueNum) ? valueNum : null;
+      if (value === null) {
+        setErr('Please enter a valid number.');
+        setSaving(false);
+        return;
+      }
+
+      // 2) write measurement (time series)
       const m = await rpcSafe('add_goal_measurement', {
         p_goal_id: goal.id,
-        p_value: Number(progressModal.value) || null,
-        p_measured_at: new Date().toISOString(),
-        p_note: progressModal.note || null
+        p_measured_at: nowIso,
+        p_note: progressModal.note || null,
+        p_value: value,
       });
-      if (m.error) throw m.error;
-      const r = await rpcSafe('add_goal_progress', payload); // keep if you still want the journal entry
+      if (m.error) throw new Error(`[add_goal_measurement] ${m.error.message || m.error}`);
 
-      if (r.error) throw r.error;
+      // 3) write journal entry (progress)
+      const r = await rpcSafe('add_goal_progress', {
+        p_goal_id: goal.id,
+        p_value: value,
+        p_currency: type === 'monetary' ? (progressModal.currency || goal.currency || null) : null,
+        p_qual_status: null,
+        p_note: progressModal.note || null,
+        p_quarter: null,
+        p_measured_at: null,
+      });
+      if (r.error) throw new Error(`[add_goal_progress] ${r.error.message || r.error}`);
 
-      // Optimistic refresh for that goal
-      setGoals(gs => gs.map(g => {
-        if (g.id !== goal.id) return g;
-        return {
-          ...g,
-          latest_progress: {
-            goal_id: goal.id,
-            value: (type !== 'qualitative') ? Number(progressModal.value) || null : null,
-            currency: (type === 'monetary') ? (progressModal.currency || goal.currency || null) : null,
-            qual_status: (type === 'qualitative') ? progressModal.qual_status : null,
-            note: progressModal.note || null,
-            created_at: new Date().toISOString()
-          },
-          latest_measurement: (type !== 'qualitative')
-            ? { goal_id: goal.id, value: Number(progressModal.value) || 0, measured_at: new Date().toISOString() }
-            : g.latest_measurement
-        };
-      }));
+      // 4) optimistic UI update
+      setGoals(gs =>
+        gs.map(g => {
+          if (g.id !== goal.id) return g;
+          const currCurrency =
+            type === 'monetary' ? (progressModal.currency || goal.currency || null) : null;
+          return {
+            ...g,
+            latest_progress: {
+              goal_id: goal.id,
+              value,
+              currency: currCurrency,
+              qual_status: null,
+              note: progressModal.note || null,
+              created_at: nowIso,
+            },
+            latest_measurement: {
+              goal_id: goal.id,
+              value,
+              measured_at: nowIso,
+              note: progressModal.note || null,
+            },
+          };
+        })
+      );
+
+      setToast('Progress updated.');
+      setProgressModal(null);
+      setTimeout(() => setToast(''), 1500);
+      return;
+    }
+
+    // Optional: qualitative path (in case you open the modal for qualitative)
+    if (type === 'qualitative') {
+      const r = await rpcSafe('add_goal_progress', {
+        p_goal_id: goal.id,
+        p_value: null,
+        p_currency: null,
+        p_qual_status: progressModal.qual_status || 'in_progress',
+        p_note: progressModal.note || null,
+        p_quarter: null,
+        p_measured_at: null,
+      });
+      if (r.error) throw new Error(`[add_goal_progress] ${r.error.message || r.error}`);
+
+      setGoals(gs =>
+        gs.map(g => {
+          if (g.id !== goal.id) return g;
+          return {
+            ...g,
+            latest_progress: {
+              goal_id: goal.id,
+              value: null,
+              currency: null,
+              qual_status: progressModal.qual_status || 'in_progress',
+              note: progressModal.note || null,
+              created_at: nowIso,
+            },
+          };
+        })
+      );
 
       setToast('Progress updated.');
       setProgressModal(null);
@@ -259,6 +323,7 @@ async function saveProgress() {
     setSaving(false);
   }
 }
+
 
   async function saveReview() {
 

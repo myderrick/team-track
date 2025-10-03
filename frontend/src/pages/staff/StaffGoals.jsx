@@ -72,9 +72,8 @@ export default function StaffGoals() {
         setLoading(true); setErr('');
 
         // Pull from your consolidated RPC
-        const { data, error } = await supabase
-          .schema('public')
-          .rpc('my_dashboard', { p_quarter: quarter });
+const { data, error } = await supabase.schema('public').rpc('my_dashboard', { p_quarter: quarter });
+
 
         if (cancel) return;
         if (error) throw error;
@@ -83,7 +82,20 @@ export default function StaffGoals() {
         // Expect goals entries contain:
         // id, title, description, department, measure_type, unit, target, deadline,
         // currency_code, self_selected(bool), category(text)
-        setGoals(data?.goals || []);
+// Normalize DB fields -> UI fields
+const rows = (data?.goals || []).map(g => ({
+  ...g,
+  // UI expects these:
+  title: g.title ?? g.label ?? '',               // <-- map label -> title
+  currency_code: g.currency ?? g.currency_code ?? null,
+  target: g.target ?? g.target_value ?? null,    // your JSX reads g.target
+  self_selected:
+    g.self_selected ?? (g.meta?.self_selected === true),
+  category:
+    g.category ?? g.meta?.category ?? 'other',
+}));
+
+setGoals(rows);
 
         const latestMap = Object.fromEntries(
           (data?.latest_measurements || []).map(m => [
@@ -164,12 +176,14 @@ const myGoalsByCategory = useMemo(() => {
           p_target_value: editing.target === null || editing.target === '' ? null : Number(editing.target),
           p_deadline: editing.deadline || null,
           p_currency: editing.currency_code || null,
+            p_quarter: quarter, // <-- from the dropdown
+
         });
         if (error) throw error;
         setToast('Goal added.');
       } else {
         // update
-        const { error } = await supabase.rpc('update_self_goal', {
+        const { error } = await supabase.schema('public').rpc('update_self_goal', {
           p_goal_id: editing.id,
           p_title: editing.title || null,
           p_description: editing.description || null,
@@ -200,12 +214,12 @@ const myGoalsByCategory = useMemo(() => {
     if (!confirm('Delete this goal?')) return;
     setSaving(true); setErr('');
     try {
-      const { error } = await supabase.rpc('delete_self_goal', { p_goal_id: goal.id });
+      const { error } = await supabase.schema('public').rpc('delete_self_goal', { p_goal_id: goal.id });
       if (error) throw error;
       setToast('Goal removed.');
       // refresh
-      const { data } = await supabase.rpc('my_dashboard', { p_quarter: quarter });
-      setGoals(data?.goals || []);
+      const { data } = await supabase.schema('public').rpc('my_dashboard', { p_quarter: quarter });
+      setGoals(mapGoals(data?.goals || [])); // keep normalization after refresh
     } catch (e) {
       setErr(String(e.message || e));
     } finally {

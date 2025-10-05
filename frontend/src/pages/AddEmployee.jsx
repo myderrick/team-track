@@ -118,6 +118,33 @@ export default function AddEmployee() {
     } catch {}
   }
 
+  const PUBLIC_EMAIL_DOMAINS = new Set([
+    'gmail.com','outlook.com','hotmail.com','yahoo.com','icloud.com','aol.com',
+    'live.com','me.com','msn.com','proton.me','protonmail.com','yandex.com','zoho.com','mail.com'
+  ]);
+  const emailDomain = (v='') => (v.split('@')[1] || '').toLowerCase().trim();
+
+  async function domainBelongsToThisOrg(domain) {
+    if (!domain) return false;
+    if (PUBLIC_EMAIL_DOMAINS.has(domain)) return false;
+    const { data, error } = await supabase.schema('app').rpc('check_org_domain', { p_domain: domain });
+    if (error) return false;
+    const row = Array.isArray(data) ? data[0] : data;
+    return !!row && row.org_id === orgId;  // ensure the domain maps to THIS org
+}
+
+const [canRotateJoinCode, setCanRotateJoinCode] = useState(false);
+useEffect(() => {
+  (async () => {
+    if (!orgId) return;
+    const r = await rpcSafe('user_orgs');
+    const rows = Array.isArray(r.data) ? r.data : [];
+    const mine = rows.filter(o => o.is_active && o.organization_id === orgId);
+    const roles = mine.map(o => (o.role || '').toLowerCase());
+    setCanRotateJoinCode(roles.some(r => r === 'owner' || r === 'admin')); // owner/admin only
+  })();
+}, [orgId]);
+
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
@@ -125,6 +152,19 @@ export default function AddEmployee() {
     setOkMsg('');
 
     try {
+
+       // Soft email validation rules when email is provided
+    if (form.email) {
+       const dom = emailDomain(form.email);
+       if (PUBLIC_EMAIL_DOMAINS.has(dom)) {
+         throw new Error('Please use a company email (personal email domains are not allowed).');
+       }
+       const ok = await domainBelongsToThisOrg(dom);
+       if (!ok) {
+         throw new Error(`“${dom}” is not a registered domain for this organization.`);
+       }
+     }
+
       // Save employee row
       const { error } = await supabase.rpc('app.add_employee_with_org', {
         p_org_id: orgId,
@@ -138,8 +178,13 @@ export default function AddEmployee() {
         // p_employee_code: form.employee_id || null,
         p_manager_id: form.manager_id || null,
       });
-      if (error) throw error;
-
+if (error) {
+      // Nice duplicate message on unique violations
+      if (error.code === '23505' || /duplicate key/i.test(error.message || '')) {
+        throw new Error('An employee with this email already exists in this organization.');
+      }
+      throw error;
+    }
       // (Optional) Invite email
       if (isEmail(form.email)) {
         try {
@@ -383,14 +428,12 @@ export default function AddEmployee() {
             </Section>
 
             {/* Join Code tools (ideal: owner/admin only) */}
-            <Section
-              title="Company join code"
-              icon={<BadgePlus className="w-4 h-4 text-gray-400" />}
-            >
-              <div className="rounded-xl border p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">Generate & share a new code</div>
+            {canRotateJoinCode && (
+              <Section title="Company join code" icon={<BadgePlus className="w-4 h-4 text-gray-400" />}>
+                <div className="rounded-xl border p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-medium">Generate & share a new code</div>
                     <div className="text-sm text-gray-500">
                       Rotate to issue a fresh, single code for new hires.
                     </div>
@@ -426,7 +469,7 @@ export default function AddEmployee() {
                 )}
               </div>
             </Section>
-
+          )}
             {/* Actions */}
             <div className="flex items-center justify-between pt-2">
               <div className="flex items-center gap-3">

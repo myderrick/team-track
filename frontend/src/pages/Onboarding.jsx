@@ -17,6 +17,11 @@ async function rpcSafe(name, args) {
   return r;
 }
 
+const PUBLIC_EMAIL_DOMAINS = new Set([
+   'gmail.com','outlook.com','hotmail.com','yahoo.com','icloud.com','aol.com',
+   'live.com','me.com','msn.com','proton.me','protonmail.com','yandex.com','zoho.com','mail.com'
+]);
+
 export default function Onboarding() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -49,10 +54,12 @@ export default function Onboarding() {
     setBusy(true);
     try {
       // create_org(name, country, domain?)
+          const safeDomain = PUBLIC_EMAIL_DOMAINS.has(domainHint) ? null : domainHint;
+
       const r1 = await rpcSafe('create_org', {
         p_name: name.trim(),
         p_country: country,
-        p_domain: domainHint || null
+        p_domain: safeDomain
       });
       if (r1.error) throw r1.error;
 

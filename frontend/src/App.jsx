@@ -36,6 +36,8 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<SignUp />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
+                      <Route path="/staff/register" element={<StaffRegister />} />
+
 
           {/* Everything below here requires auth */}
           <Route element={<ProtectedLayout />}>
@@ -52,7 +54,7 @@ export default function App() {
             <Route path="/performancereviews" element={<PerformanceReviewsPage />} />
             <Route path="/selfreview" element={<SelfReview />} />
             <Route path="/staff" element={<StaffDashboard />} />
-            <Route path="/staff/register" element={<StaffRegister />} />
+            {/* <Route path="/staff/register" element={<StaffRegister />} /> */}
             <Route path="/staff/:employeeId" element={<StaffProfile />} />
             <Route path="/staff/self-review" element={<SelfReview />} />
             <Route path="/staff/goals" element={<StaffGoals />} />

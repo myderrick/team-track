@@ -3,6 +3,9 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 
+const PUBLIC_EMAIL_DOMAINS = new Set(['gmail.com','outlook.com','hotmail.com','yahoo.com','icloud.com','aol.com','live.com','me.com','msn.com','proton.me','protonmail.com','yandex.com','zoho.com','mail.com']);
+const emailDomain = (v='') => (v.split('@')[1] || '').toLowerCase().trim();
+
 export default function AuthCallback() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -11,13 +14,11 @@ export default function AuthCallback() {
   useEffect(() => {
     (async () => {
       try {
-        // Figure out where to go after auth
         const next =
           params.get('next') ||
           sessionStorage.getItem('post_auth_redirect') ||
           '/dashboard';
 
-        // Surface provider errors from the URL
         const urlErr = params.get('error_description') || params.get('error');
         if (urlErr) {
           setMsg(urlErr);
@@ -25,7 +26,6 @@ export default function AuthCallback() {
           return;
         }
 
-        // Exchange ?code= for a session (PKCE / OAuth / magic link code)
         if (params.get('code')) {
           const { error } = await supabase.auth.exchangeCodeForSession(window.location.href);
           if (error) {
@@ -35,21 +35,36 @@ export default function AuthCallback() {
           }
         }
 
-        // Password recovery links should go to your reset screen
         if (params.get('type') === 'recovery') {
           navigate(`/reset-password?next=${encodeURIComponent(next)}`, { replace: true });
           return;
         }
 
-        // Ensure we actually have a session
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
           navigate('/login', { replace: true });
           return;
         }
 
-        // Link staff account (safe to ignore errors if already linked)
+        // 🔒 Domain re-check (post-OAuth)
         const { data: { user } } = await supabase.auth.getUser();
+        const domain = emailDomain(user?.email || '');
+        if (!domain || PUBLIC_EMAIL_DOMAINS.has(domain)) {
+          setMsg('Only company emails are allowed. Please use your work email.');
+          await supabase.auth.signOut();
+          setTimeout(() => navigate('/login', { replace: true }), 1500);
+          return;
+        }
+
+        const { data: domRows, error: domErr } = await supabase.schema('app').rpc('check_org_domain', { p_domain: domain });
+        if (domErr || !domRows || domRows.length === 0) {
+          setMsg(`We don't recognize “${domain}”. Please register your organization.`);
+          await supabase.auth.signOut();
+          setTimeout(() => navigate('/login', { replace: true }), 1500);
+          return;
+        }
+
+        // Optional: link staff account (kept from your code)
         if (user?.email) {
           await supabase
             .schema('public')

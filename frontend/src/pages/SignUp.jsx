@@ -1,8 +1,37 @@
+// frontend/src/pages/SignUp.jsx
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import AuthLayout from '../components/AuthLayout';
 import { ErrorBanner, Field, MailIcon, LockIcon, EyeIcon, EyeOffIcon } from '../components/AuthBits';
+
+// helpers
+const isEmail = (v='') => /\S+@\S+\.\S+/.test(v);
+const emailDomain = (v='') => (v.split('@')[1] || '').toLowerCase().trim();
+
+const PUBLIC_EMAIL_DOMAINS = new Set([
+  'gmail.com','outlook.com','hotmail.com','yahoo.com','icloud.com','aol.com',
+  'live.com','me.com','msn.com','proton.me','protonmail.com','yandex.com','zoho.com','mail.com'
+]);
+const isPublicEmailDomain = (d) => PUBLIC_EMAIL_DOMAINS.has(d);
+
+// centralized domain check (same as Login)
+async function checkDomainRegistered(domain) {
+  if (!domain) return { ok: false, reason: 'no-domain' };
+  if (isPublicEmailDomain(domain)) return { ok: false, reason: 'public-domain' };
+
+  const { data, error } = await supabase
+    .schema('app') // RPC lives in app
+    .rpc('check_org_domain', { p_domain: domain });
+
+  if (error) {
+    console.warn('[SignUp] domain rpc error', error);
+    return { ok: false, reason: 'lookup-error' };
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) return { ok: false, reason: 'unknown-domain' };
+  return { ok: true, org: row };
+}
 
 export default function SignUp() {
   const navigate = useNavigate();
@@ -23,8 +52,38 @@ export default function SignUp() {
     setError('');
     setBusy(true);
 
+    const email = form.email.trim();
+    if (!isEmail(email)) {
+      setBusy(false);
+      return setError('Please use a valid company email.');
+    }
+
+    // 🔒 Domain precheck *before* hitting Auth
+    const domain = emailDomain(email);
+    const domCheck = await checkDomainRegistered(domain);
+    if (!domCheck.ok) {
+      setBusy(false);
+      if (domCheck.reason === 'public-domain') {
+        return setError(
+          `We only allow company emails. “${domain}” is a personal email domain. ` +
+          `Use your work email or register your organization.`
+        );
+      }
+      if (domCheck.reason === 'unknown-domain') {
+        return setError(
+          `We don’t recognize “${domain}”. ` +
+          `Check the email or register your organization to Team Track.`
+        );
+      }
+      return setError('Unable to verify your company domain right now. Please try again.');
+    }
+
+    // (Optional) stash org_id for onboarding (eg. auto-join later)
+    try { sessionStorage.setItem('expected_org_id', domCheck.org.org_id); } catch {}
+
+    // Proceed with signup
     const { data, error } = await supabase.auth.signUp({
-      email: form.email.trim(),
+      email,
       password: form.password,
       options: {
         emailRedirectTo: `${window.location.origin}/auth/callback`,
@@ -45,10 +104,35 @@ export default function SignUp() {
 
   async function signUpWithGoogle() {
     setError('');
+
+    // If they typed email, fast-fail on banned/unknown domains for nicer UX
+    const email = form.email.trim();
+    const domain = emailDomain(email);
+    if (email && domain) {
+      const domCheck = await checkDomainRegistered(domain);
+      if (!domCheck.ok) {
+        if (domCheck.reason === 'public-domain') {
+          return setError(
+            `We only allow company emails. “${domain}” is a personal email domain. ` +
+            `Use your work email or register your organization.`
+          );
+        }
+        if (domCheck.reason === 'unknown-domain') {
+          return setError(`We don’t recognize “${domain}”. Please use your company email or register your organization.`);
+        }
+        return setError('Unable to verify your company domain right now. Please try again.');
+      }
+      try { sessionStorage.setItem('expected_org_id', domCheck.org.org_id); } catch {}
+    }
+
     const redirectTo = `${window.location.origin}/auth/callback`;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo }
+      options: {
+        redirectTo,
+        // Optional UX: if email typed, hint Google to that account
+        queryParams: email ? { login_hint: email } : {}
+      }
     });
     if (error) setError(error.message);
   }
@@ -59,6 +143,18 @@ export default function SignUp() {
       subtitle="Start your 14-day trial. No credit card required."
     >
       <ErrorBanner message={error} />
+
+      {error && (
+        <div className="mb-3 text-sm text-gray-600">
+          <div className="mt-1">
+            <Link to="/org/register" className="text-indigo-600 hover:underline">Register your organization</Link>
+            <span className="mx-2">•</span>
+            <button type="button" onClick={() => setForm(f => ({ ...f, email: '' }))} className="text-gray-700 hover:underline">
+              Try a different email
+            </button>
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <Field label="Email">

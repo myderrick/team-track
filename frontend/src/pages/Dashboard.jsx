@@ -1,3 +1,4 @@
+// frontend/src/pages/Dashboard.jsx
 import React, { useEffect, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -7,6 +8,7 @@ import TopBar from '@/components/TopBar';
 import Sidebar from '@/components/Sidebar';
 import OrgSwitcher from '@/components/OrgSwitcher';
 import EmptyState from '@/components/EmptyState';
+import ErrorBoundary from '@/components/ErrorBoundary';
 
 import IndividualLeaderboard from '@/components/IndividualLeaderboard';
 import TeamPerformanceChart from '@/components/TeamPerformanceChart';
@@ -207,11 +209,14 @@ export default function Dashboard() {
         <main className="flex-1 ml-16 mt-4 mr-4 mb-4 transition-margin duration-200 group-hover:ml-64 px-6 overflow-auto">
           {view === 'individual' ? (
             employeeCount > 0 ? (
+                  <ErrorBoundary>
+
               <IndividualLeaderboard
                 period={period}
                 department={department}
                 location={location}
               />
+                  </ErrorBoundary>
             ) : (
               <EmptyState title="No individual performance data" subtitle="Add employees to populate the leaderboard." />
             )

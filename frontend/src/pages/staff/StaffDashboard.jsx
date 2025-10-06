@@ -1,3 +1,4 @@
+// frontend/src/pages/staff/StaffDashboard.jsx
 import React, { useEffect, useMemo, useState } from 'react';
 import { format, parseISO, differenceInCalendarDays, isBefore } from 'date-fns';
 import { TrendingUp, AlertTriangle, Clock, CheckCircle2, Plus } from 'lucide-react';
@@ -101,18 +102,20 @@ export default function StaffDashboard() {
         setLatest(latestMap);
 
         // 🔧 Normalize a reliable title so UI can always render it
-        const normalizedGoals = (data?.goals || []).map(g => ({
-          ...g,
-          title:
-            g.title ??
-            g.label ??
-            g.name ??
-            g.goal_title ??
-            g.goal ??
-            g.text ??
-            'Untitled goal',
-        }));
-        setGoals(normalizedGoals);
+        // inside the effect that loads my_dashboard, replace your current normalization:
+const normalizedGoals = (data?.goals || []).map(g => ({
+  ...g,
+  // reliable title
+  title: g.title ?? g.label ?? g.name ?? g.goal_title ?? g.goal ?? g.text ?? 'Untitled goal',
+  // 🔧 map DB fields to what the UI expects
+  target: g.target ?? g.target_value ?? null,
+  currency_code: g.currency ?? g.currency_code ?? null,
+  unit: g.unit ?? g.measure_unit ?? g.uom ?? '',
+  measure_type: g.measure_type ?? g.type ?? (g.currency ? 'monetary' : 'numeric'),
+}));
+
+setGoals(normalizedGoals);
+
       } catch (e) {
         if (!cancel) setErr(String(e.message || e));
       } finally {

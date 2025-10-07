@@ -1,11 +1,9 @@
 // frontend/src/pages/GoalsKpiTracker.jsx
 import React, { useMemo, useEffect, useState } from 'react';
-// at top with recharts imports
 import {
   BarChart, Bar, Tooltip, ResponsiveContainer, ReferenceLine, XAxis,
   LineChart, Line, YAxis
 } from 'recharts';
-
 import { PieChart as MinimalPieChart } from 'react-minimal-pie-chart';
 import { addDays, startOfMonth, startOfQuarter, endOfToday } from 'date-fns';
 import { format } from 'date-fns';
@@ -14,6 +12,86 @@ import TopBar from '@/components/TopBar';
 import { supabase } from '@/lib/supabaseClient';
 import { useOrg } from '@/context/OrgContext';
 import EmptyState from '@/components/EmptyState';
+
+
+// --- MiniGoalCard.jsx ---
+function MiniGoalCard({ goal, currentValue, fmt }) {
+  const pct = (() => {
+    const t = Number(goal.target || 0);
+    if (!t || t <= 0) return 0;
+    const p = Math.round((Number(currentValue || 0) / t) * 100);
+    return Math.max(0, Math.min(100, p));
+  })();
+
+  return (
+    <div className="snap-start shrink-0 min-w-[260px] md:min-w-[320px] lg:min-w-[360px] rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 shadow-sm">
+      <div className="text-xs text-gray-500 dark:text-gray-400">Goal</div>
+      <div className="font-semibold text-gray-900 dark:text-gray-100 line-clamp-2 mb-2">
+        {goal.title}
+      </div>
+
+      {/* compact progress */}
+      <div className="h-2 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
+        <div
+          className={`h-2 ${pct >= 90 ? 'bg-green-500' : pct >= 60 ? 'bg-amber-500' : 'bg-rose-500'}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+
+      <div className="mt-2 text-[11px] flex items-center justify-between text-gray-600 dark:text-gray-300">
+        <div>Current: <strong>{fmt(currentValue, goal.unit, null)}</strong></div>
+        <div>Target: <strong>{fmt(goal.target, goal.unit, null)}</strong></div>
+      </div>
+    </div>
+  );
+}
+
+// --- CategoryRail.jsx ---
+function CategoryRail({ title, blocks, fmt }) {
+  if (!blocks?.length) return null;
+
+  // Optional: sort by % to target descending (remove if not desired)
+  const sorted = blocks.slice().sort((a, b) => {
+    const tA = Number(a.goal.target || 0), tB = Number(b.goal.target || 0);
+    const pA = tA > 0 ? (a.current / tA) : 0;
+    const pB = tB > 0 ? (b.current / tB) : 0;
+    return pB - pA;
+  });
+
+  return (
+    <div className="w-full">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-lg font-medium">{title}</h3>
+        <span className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+          {blocks.length} goal{blocks.length > 1 ? 's' : ''}
+        </span>
+      </div>
+
+      {/* full-bleed feeling & horizontal scroll */}
+      <div className="-mx-2">
+        <div className="px-2 overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-700">
+          <div className="flex gap-3 snap-x snap-mandatory">
+            {sorted.map(({ goal, current }) => (
+              <MiniGoalCard
+                key={goal.id}
+                goal={{ ...goal, currency_code: null }}     // numeric categories: no currency symbol
+                currentValue={current}
+                fmt={fmt}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function safeJson(v, fallback = {}) {
+  if (!v) return fallback;
+  if (typeof v === 'object') return v;
+  try { return JSON.parse(v); } catch { return fallback; }
+}
 
 const departmentOptionsDefault = ['All Departments'];
 const datePresets = [
@@ -25,8 +103,18 @@ const datePresets = [
   { label: 'Custom range', value: 'CUSTOM' },
 ];
 
-function currentQuarterLabel(d = new Date()) {
-  const q = Math.floor(d.getMonth()/3) + 1;
+const CATEGORY_KEYS = ['development', 'learning', 'growth', 'other'];
+const CATEGORY_LABELS = {
+  development: 'Development Goals',
+  learning: 'Learning Goals',
+  growth: 'Growth Goals',
+  other: 'Other Goals',
+};
+
+// Returns "All" by default, or the current quarter label if a date is provided
+function currentQuarterLabel(d) {
+  if (!d) return 'All';
+  const q = Math.floor(d.getMonth() / 3) + 1;
   return `Q${q} ${d.getFullYear()}`;
 }
 
@@ -39,14 +127,14 @@ const fmtMeasure = (n, unit, currency_code) => {
   return Number(n||0).toLocaleString();
 };
 
-// 👉 small helper to compute grid columns based on active sections
+// grid columns for the outer section layout
 function gridColsClass(count) {
   if (count <= 1) return 'grid-cols-1';
   if (count === 2) return 'grid-cols-1 md:grid-cols-2';
   return 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3';
 }
 
-// --- helpers for cards ---
+// ---- Performance helpers ---------------------------------------------------
 function pctToTarget(current = 0, target = 0) {
   if (!target || target <= 0) return 0;
   return Math.max(0, Math.min(100, Math.round((Number(current) / Number(target)) * 100)));
@@ -62,23 +150,26 @@ function barColor(p) {
   return 'bg-rose-500';
 }
 
-// Build a small LINE series (instead of bar) ordered by measured_at if present
+// read measurement value; supports either .value or .goal_progress
+function getMeasureValue(r) {
+  const v = r?.value ?? r?.goal_progress ?? 0;
+  return Number(v || 0);
+}
+
+// series ordered by measured_at (if present)
 function buildLineSeries(rowsForGoal = []) {
-  const rows = rowsForGoal
-    .slice()
-    .sort((a, b) => {
-      const da = a.measured_at ? new Date(a.measured_at).getTime() : 0;
-      const db = b.measured_at ? new Date(b.measured_at).getTime() : 0;
-      return da - db;
-    });
+  const rows = rowsForGoal.slice().sort((a, b) => {
+    const da = a.measured_at ? new Date(a.measured_at).getTime() : 0;
+    const db = b.measured_at ? new Date(b.measured_at).getTime() : 0;
+    return da - db;
+  });
   return rows.map((r, i) => ({
     i,
-    value: Number(r.value || 0),
-    measured_at: r.measured_at || null
+    value: getMeasureValue(r),
+    measured_at: r.measured_at || null,
   }));
 }
 
-// pick the “current” based on aggMode
 function computeCurrent(rows = [], mode = 'avg') {
   if (!rows.length) return 0;
   if (mode === 'latest') {
@@ -87,40 +178,22 @@ function computeCurrent(rows = [], mode = 'avg') {
       const db = b.measured_at ? new Date(b.measured_at).getTime() : 0;
       return da - db;
     }).pop();
-    return Number(last?.value || 0);
+    return getMeasureValue(last);
   }
-  // avg
-  const sum = rows.reduce((s, r) => s + Number(r.value || 0), 0);
+  const sum = rows.reduce((s, r) => s + getMeasureValue(r), 0);
   return sum / rows.length;
 }
-
-// last N entries (for tooltip)
 function takeLastN(series = [], n = 3) {
   return series.slice(Math.max(0, series.length - n));
 }
 
-
-// Build a tiny sparkline series for a given goal from filteredRows.
-// Uses measured_at if present; otherwise falls back to index order.
-function buildSparkline(rowsForGoal = []) {
-  const rows = rowsForGoal
-    .slice()
-    .sort((a, b) => {
-      const da = a.measured_at ? new Date(a.measured_at).getTime() : 0;
-      const db = b.measured_at ? new Date(b.measured_at).getTime() : 0;
-      return da - db;
-    });
-  // recharts needs an array of objects with a numeric field
-  return rows.map((r, i) => ({ i, value: Number(r.value || 0) }));
-}
-
-// Elegant mini-card used for Monetary/Numeric goals
+// Elegant per-goal card
 function GoalStatCard({ goal, currentValue, fmt = (n)=>n, series = [], last3 = [] }) {
   const pct = pctToTarget(currentValue, goal.target);
 
-  // custom tooltip to show last 3 points (stable regardless of hover)
-  const CustomTooltip = ({ active, payload, label }) => {
-    const items = last3.length ? last3 : (payload || []).map(p => p.payload);
+  const CustomTooltip = () => {
+    const items = last3.length ? last3 : [];
+    if (!items.length) return null;
     return (
       <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3 shadow">
         <div className="text-xs font-semibold mb-1 text-gray-700 dark:text-gray-200">{goal.title}</div>
@@ -145,7 +218,6 @@ function GoalStatCard({ goal, currentValue, fmt = (n)=>n, series = [], last3 = [
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 w-full">
           <div className="text-sm text-gray-500 dark:text-gray-400">Goal</div>
-          {/* title takes full row */}
           <div className="font-semibold text-gray-900 dark:text-gray-100 break-words">{goal.title}</div>
         </div>
         <span className={`px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${statusColor(pct)}`}>
@@ -153,7 +225,6 @@ function GoalStatCard({ goal, currentValue, fmt = (n)=>n, series = [], last3 = [
         </span>
       </div>
 
-      {/* tiny line sparkline */}
       <div className="h-16">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={series.length ? series : [{ value: currentValue, i: 0 }]}>
@@ -161,18 +232,15 @@ function GoalStatCard({ goal, currentValue, fmt = (n)=>n, series = [], last3 = [
             <ReferenceLine y={Number(goal.target || 0)} strokeDasharray="3 3" />
             <YAxis hide domain={['auto', 'auto']} />
             <XAxis hide dataKey="i" />
+            {/* Static “last 3” preview box; we don't depend on hover */}
             <Tooltip content={<CustomTooltip />} />
           </LineChart>
         </ResponsiveContainer>
       </div>
 
-      {/* progress bar */}
       <div>
         <div className="h-2 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
-          <div
-            className={`h-2 ${barColor(pct)}`}
-            style={{ width: `${pct}%` }}
-          />
+          <div className={`h-2 ${barColor(pct)}`} style={{ width: `${pct}%` }} />
         </div>
         <div className="mt-2 text-xs flex items-center justify-between text-gray-600 dark:text-gray-300">
           <div>Current: <strong>{fmt(currentValue, goal.unit, goal.currency_code)}</strong></div>
@@ -182,8 +250,6 @@ function GoalStatCard({ goal, currentValue, fmt = (n)=>n, series = [], last3 = [
     </div>
   );
 }
-
-
 
 export default function GoalsKpiTracker() {
   const { orgId } = useOrg();
@@ -202,6 +268,9 @@ export default function GoalsKpiTracker() {
     end: format(endOfToday(), 'yyyy-MM-dd'),
   });
 
+  // Avg vs Latest toggle for cards
+  const [aggMode, setAggMode] = useState('avg'); // 'avg' | 'latest'
+
   // Data
   const [employees, setEmployees] = useState([]);     // [{id, full_name, department}]
   const [goals, setGoals] = useState([]);             // from org_goals_catalog
@@ -209,7 +278,16 @@ export default function GoalsKpiTracker() {
   const [summary, setSummary] = useState([]);         // from org_user_completion_summary
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
-  const [aggMode, setAggMode] = useState('avg'); // 'avg' | 'latest'
+
+
+ const selectedEmployeeId = useMemo(() => {
+  if (teamFilter === 'All') return null;
+  const emp = employees.find(e => e.full_name === teamFilter);
+  // Support either 'id' or 'employee_id' from RPC:
+  return emp?.id || emp?.employee_id || null;
+}, [teamFilter, employees]);
+
+
 
 
   // Dark mode persistence
@@ -223,29 +301,100 @@ export default function GoalsKpiTracker() {
     localStorage.setItem('darkMode', darkMode);
   }, [darkMode]);
 
+  // Normalize goals similar to Staff/Goals.jsx mapping
+  function normalizeGoal(g) {
+  const meta = safeJson(g.meta);
+
+  // Some units are set to "1" (which reads odd in UI). Optionally hide numeric-only unit:
+  const rawUnit = g.unit ?? g.measure_unit ?? g.unit_label ?? '';
+  const unit = /^\d+(\.\d+)?$/.test(String(rawUnit || '')) ? '' : rawUnit;
+
+  return {
+    ...g,
+    title: g.title ?? g.label ?? '',
+    measure_type: g.measure_type, // 'numeric' | 'monetary' | 'qualitative'
+    // currency priority: meta.measure_currency > currency_code > currency
+    currency_code: meta.measure_currency ?? g.currency_code ?? g.currency ?? null,
+    unit,
+    target: g.target ?? g.target_value ?? g.target_amount ?? null,
+    start_value: g.start_value ?? null,
+    // category priority: explicit field > goal_category > meta.category
+    category: (g.category ?? g.goal_category ?? meta.category ?? null)?.toLowerCase() || null,
+    // You can surface visibility/self flags if useful later:
+    visibility: g.visibility ?? 'org',
+    self_selected: meta.self_selected === true,
+  };
+}
+
+useEffect(() => {
+  const counts = goals.reduce((a, g) => {
+    const k = g.category || 'none';
+    a[k] = (a[k] || 0) + 1;
+    return a;
+  }, {});
+  // console.debug('Goal categories present:', counts);
+}, [goals]);
+
+
   // Load base lists (employees, goals for quarter)
   useEffect(() => {
-    let cancel = false;
-    (async () => {
-      setLoading(true); setErr('');
-      if (!orgId) { setEmployees([]); setGoals([]); setMeasurements([]); setSummary([]); setLoading(false); return; }
+  let cancel = false;
+  (async () => {
+    setLoading(true); setErr('');
+    if (!orgId) {
+      setEmployees([]); setGoals([]); setMeasurements([]); setSummary([]);
+      setLoading(false); return;
+    }
 
-      const [eRes, gRes] = await Promise.all([
-        supabase.schema('public').rpc('org_employees', { p_org_id: orgId }),
-        supabase.schema('public').rpc('org_goals_catalog', { p_org_id: orgId, p_quarter: quarter })
-      ]);
+    // 1) employees and ORG goals for the quarter
+    const [eRes, gRes] = await Promise.all([
+      supabase.schema('public').rpc('org_employees', { p_org_id: orgId }),
+ supabase.schema('public').rpc('org_goals_catalog', {
+   p_org_id: orgId,
+   p_quarter: quarter === 'All' ? null : quarter
+ })    ]);
 
-      if (cancel) return;
-      if (eRes.error) { setErr(eRes.error.message); setEmployees([]); }
-      else setEmployees(eRes.data || []);
+    if (cancel) return;
 
-      if (gRes.error) { setErr(prev => prev || gRes.error.message); setGoals([]); }
-      else setGoals(gRes.data || []);
+    const employeesData = eRes.error ? [] : (eRes.data || []);
+    const baseGoals = gRes.error ? [] : (gRes.data || []);
+let mergedGoals = baseGoals
+   .map(normalizeGoal)
+   // hide self/personal goals when "All" employees is active
+   .filter(g => {
+     if (selectedEmployeeId) return true; // show them when a person is selected
+     const isSelfish =
+       g.self_selected === true ||
+       (g.visibility && g.visibility.toLowerCase() === 'personal');
+     return !isSelfish;
+   });
+    // 2) If a specific employee is selected, merge in their self goals
+    if (selectedEmployeeId) {
+     const eg = await supabase.schema('public').rpc('employee_dashboard', {
+   p_employee_id: selectedEmployeeId,
+   // p_quarter: quarter === 'All' ? null : quarter
+ });
+      if (!eg.error) {
+        const selfGoals = (eg.data?.goals || []).map(normalizeGoal)
+          // guard: only self-selected/personal goals
+          .filter(g => g.self_selected === true || g.visibility === 'personal');
 
-      setLoading(false);
-    })();
-    return () => { cancel = true; };
-  }, [orgId, quarter]);
+        // de-dupe by id
+        const seen = new Set(mergedGoals.map(g => g.id));
+        for (const g of selfGoals) if (!seen.has(g.id)) mergedGoals.push(g);
+      } else if (eg.error.code !== 'PGRST202') {
+        // if RPC missing we ignore; any other error we surface
+        setErr(prev => prev || eg.error.message);
+      }
+    }
+
+    setEmployees(employeesData);
+    setGoals(mergedGoals);
+    setLoading(false);
+  })();
+  return () => { cancel = true; };
+}, [orgId, quarter, selectedEmployeeId]);
+
 
   // Load measurements + summary for the window
   useEffect(() => {
@@ -291,7 +440,9 @@ export default function GoalsKpiTracker() {
     return () => { cancel = true; };
   }, [orgId, department, timeline, customRange]);
 
-  // Build filter options from live data
+
+
+  // Build filter options
   const departmentOptions = useMemo(() => {
     const set = new Set(departmentOptionsDefault);
     employees.forEach(e => { if (e.department) set.add(e.department); });
@@ -322,48 +473,89 @@ export default function GoalsKpiTracker() {
     });
   }, [measurements, department, goalType, teamFilter]);
 
-  // Index goals for quick lookups
+  // goal lookup by id
   const goalsById = useMemo(() => {
     const m = new Map();
     for (const g of goals) m.set(g.id, g);
     return m;
   }, [goals]);
 
-  // —— Determine which measure types actually exist in the current selection
+  // Determine active measure types present
   const activeMeasureTypes = useMemo(() => {
     const typeSet = new Set();
     for (const row of filteredRows) {
       const g = goalsById.get(row.goal_id);
       if (g?.measure_type) typeSet.add(g.measure_type);
     }
-    return Array.from(typeSet); // e.g., ['monetary','numeric','qualitative']
+    return Array.from(typeSet);
   }, [filteredRows, goalsById]);
 
-  // —— Build blocks by type → goal, averaging values for the selection window
-  function buildBlocksForType(typeName) {
-  const typeGoals = goals.filter(g => g.measure_type === typeName);
-  if (typeGoals.length === 0) return [];
+  // Monetary blocks
+  const monetaryBlocks = useMemo(() => {
+    const typeGoals = goals.filter(g => g.measure_type === 'monetary');
+    return typeGoals.map(goal => {
+      const rows = filteredRows.filter(r => r.goal_id === goal.id);
+      const series = buildLineSeries(rows);
+      const current = computeCurrent(rows, aggMode);
+      const last3 = takeLastN(series, 3);
+      const hasData = rows.length > 0 || current > 0;
+      return { goal, current, series, last3, hasData };
+    }).filter(b => b.hasData);
+  }, [filteredRows, goals, aggMode]);
 
-  return typeGoals.map(goal => {
-    const rows = filteredRows.filter(r => r.goal_id === goal.id);
-    const series = buildLineSeries(rows);
-    const current = computeCurrent(rows, aggMode);
-    const last3 = takeLastN(series, 3);
-    return { goal, current, series, last3, hasData: rows.length > 0 || current > 0 };
-  }).filter(b => b.hasData);
-}
+  // Numeric regular (exclude category keys)
+  const numericRegularBlocks = useMemo(() => {
+    const typeGoals = goals.filter(g =>
+      g.measure_type === 'numeric' && !CATEGORY_KEYS.includes((g.category || '').toLowerCase())
+    );
+    return typeGoals.map(goal => {
+      const rows = filteredRows.filter(r => r.goal_id === goal.id);
+      const series = buildLineSeries(rows);
+      const current = computeCurrent(rows, aggMode);
+      const last3 = takeLastN(series, 3);
+      const hasData = rows.length > 0 || current > 0;
+      return { goal, current, series, last3, hasData };
+    }).filter(b => b.hasData);
+  }, [filteredRows, goals, aggMode]);
 
+  // Category blocks map: { development: Block[], learning: Block[], ... }
+  const categoryBlocks = useMemo(() => {
+  const out = {};
+  for (const key of CATEGORY_KEYS) {
+    // 1) start with numeric goals tagged with this category
+    let catGoals = goals.filter(
+      g => g.measure_type === 'numeric' && (g.category || '').toLowerCase() === key
+    );
 
+    // 2) if a specific employee is selected, only show their personal/owned goals
+    if (selectedEmployeeId) {
+      catGoals = catGoals.filter(g => g.owner_employee_id === selectedEmployeeId);
+    }
 
-const monetaryBlocks = useMemo(() => buildBlocksForType('monetary'), [filteredRows, goals, aggMode]);
-const numericBlocks   = useMemo(() => buildBlocksForType('numeric'),   [filteredRows, goals, aggMode]);
+    // 3) build blocks EVEN IF there are no measurements; current=0, empty series
+    const blocks = catGoals.map(goal => {
+      const rows = filteredRows.filter(r => r.goal_id === goal.id);
+      const series = buildLineSeries(rows);
+      const current = computeCurrent(rows, aggMode);     // 0 if no rows
+      const last3 = takeLastN(series, 3);                // []
+      return { goal, current, series, last3 };
+    });
 
-  const qualitativeList = useMemo(() => goals.filter(g => g.measure_type === 'qualitative'), [goals]);
+    out[key] = blocks; // <-- no ".filter(b => b.hasData)" here
+  }
+  return out;
+}, [filteredRows, goals, aggMode, selectedEmployeeId]);
 
-  // —— Donut pick: first monetary goal (optional)
+  // Qualitative list (status-style)
+  const qualitativeList = useMemo(
+    () => goals.filter(g => g.measure_type === 'qualitative'),
+    [goals]
+  );
+
+  // Donut from first monetary
   const donut = monetaryBlocks[0] || null;
   const donutPct = donut
-    ? Math.max(0, Math.min(100, Math.round((donut.avg / (donut.goal.target || 1)) * 100)))
+    ? Math.max(0, Math.min(100, Math.round((donut.current / (donut.goal.target || 1)) * 100)))
     : 0;
 
   // Top/bottom performers from summary
@@ -373,16 +565,27 @@ const numericBlocks   = useMemo(() => buildBlocksForType('numeric'),   [filtered
     return s.filter(p => !topPerformers.find(t => t.employee_id === p.employee_id)).slice(0, 3);
   }, [summary, topPerformers]);
 
-  // —— Compute how many sections are actually visible right now
+
+  // Visible sections
   const visibleSections = useMemo(() => {
     const sections = [];
     if (activeMeasureTypes.includes('monetary') && monetaryBlocks.length > 0) sections.push('monetary');
-    if (activeMeasureTypes.includes('numeric')   && numericBlocks.length > 0) sections.push('numeric');
+    if (numericRegularBlocks.length > 0) sections.push('numeric');
+    for (const key of CATEGORY_KEYS) {
+      if (categoryBlocks[key]?.length) sections.push(`cat:${key}`);
+    }
     if (activeMeasureTypes.includes('qualitative') && qualitativeList.length > 0) sections.push('qualitative');
     return sections;
-  }, [activeMeasureTypes, monetaryBlocks, numericBlocks, qualitativeList]);
+  }, [activeMeasureTypes, monetaryBlocks, numericRegularBlocks, qualitativeList, categoryBlocks]);
+
 
   const gridClass = gridColsClass(visibleSections.length);
+
+  // Only show categories that actually have items
+const visibleCategories = useMemo(
+  () => CATEGORY_KEYS.filter(k => (categoryBlocks[k]?.length || 0) > 0),
+  [categoryBlocks]
+);
 
   return (
     <div className="flex flex-col h-screen dark:bg-gray-900 text-gray-800 dark:text-gray-200">
@@ -397,13 +600,15 @@ const numericBlocks   = useMemo(() => buildBlocksForType('numeric'),   [filtered
       <div className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 shadow ml-16 group-hover:ml-64">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Goals and KPIs</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Performance overview for {quarter}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Performance overview{quarter && quarter !== 'All' ? ` for ${quarter}` : ''}
+          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
           <select value={quarter} onChange={e => setQuarter(e.target.value)}
                   className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600">
-            {['Q1 2025','Q2 2025','Q3 2025','Q4 2025'].map(q => <option key={q}>{q}</option>)}
+  {['All','Q1 2025','Q2 2025','Q3 2025','Q4 2025'].map(q => <option key={q}>{q}</option>)}
           </select>
 
           <select value={department} onChange={e => setDepartment(e.target.value)}
@@ -436,27 +641,26 @@ const numericBlocks   = useMemo(() => buildBlocksForType('numeric'),   [filtered
                      className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600" />
             </div>
           )}
+
+          {/* Agg mode toggle */}
+          <div className="flex items-center gap-2 ml-2">
+            <span className="text-xs text-gray-500 dark:text-gray-400">Value:</span>
+            <div className="inline-flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+              <button
+                className={`px-3 py-1 text-xs ${aggMode==='avg' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300'}`}
+                onClick={() => setAggMode('avg')}
+              >
+                Avg
+              </button>
+              <button
+                className={`px-3 py-1 text-xs ${aggMode==='latest' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300'}`}
+                onClick={() => setAggMode('latest')}
+              >
+                Latest
+              </button>
+            </div>
+          </div>
         </div>
-
-        {/* Agg mode toggle */}
-<div className="flex items-center gap-2 ml-2">
-  <span className="text-xs text-gray-500 dark:text-gray-400">Value:</span>
-  <div className="inline-flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
-    <button
-      className={`px-3 py-1 text-xs ${aggMode==='avg' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300'}`}
-      onClick={() => setAggMode('avg')}
-    >
-      Avg
-    </button>
-    <button
-      className={`px-3 py-1 text-xs ${aggMode==='latest' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300'}`}
-      onClick={() => setAggMode('latest')}
-    >
-      Latest
-    </button>
-  </div>
-</div>
-
       </div>
 
       <main className="flex-1 ml-20 mt-4 mr-4 mb-4 px-0 overflow-auto">
@@ -466,108 +670,146 @@ const numericBlocks   = useMemo(() => buildBlocksForType('numeric'),   [filtered
           <div className="p-6"><EmptyState title="Unable to load data" subtitle={err} /></div>
         ) : (
           <>
-            {/* === Responsive sections that only render if the type exists for the current selection === */}
+            {/* OUTER sections grid (adapts to how many sections are visible) */}
             <div className={`grid ${gridClass} gap-6 mb-10`}>
-              
-              {/* Monetary – Bars + (optional) donut */}
-              {/* Monetary section */}
-{/* Monetary section */}
-{visibleSections.includes('monetary') && (
-  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 flex flex-col h-full">
-    <h3 className="text-lg font-medium mb-4">Monetary Goals</h3>
-    {monetaryBlocks.length === 0 ? (
-      <EmptyState title="No monetary goals" subtitle="Create a monetary goal to see progress." />
-    ) : (
-      // FULL-WIDTH cards inside the section
-      <div className="grid grid-cols-1 gap-4">
-        {monetaryBlocks.map(({ goal, current, series, last3 }) => (
-          <GoalStatCard
-            key={goal.id}
-            goal={goal}
-            currentValue={current}
-            fmt={fmtMeasure}
-            series={series}
-            last3={last3}
-          />
-        ))}
-      </div>
-    )}
-  </div>
-)}
 
+              {/* Monetary */}
+              {visibleSections.includes('monetary') && (
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 flex flex-col h-full">
+                  <h3 className="text-lg font-medium mb-4">Monetary Goals</h3>
+                  {monetaryBlocks.length === 0 ? (
+                    <EmptyState title="No monetary goals" subtitle="Create a monetary goal to see progress." />
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4">
+                      {monetaryBlocks.map(({ goal, current, series, last3 }) => (
+                        <GoalStatCard
+                          key={goal.id}
+                          goal={goal}
+                          currentValue={current}
+                          fmt={fmtMeasure}
+                          series={series}
+                          last3={last3}
+                        />
+                      ))}
+                    </div>
+                  )}
 
-
-              {/* Numeric Goals – unit-based KPIs */}
-  {/* Numeric section */}
-{visibleSections.includes('numeric') && (
-  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 flex flex-col h-full">
-    <h3 className="text-lg font-medium mb-4">Numeric Goals</h3>
-    {numericBlocks.length === 0 ? (
-      <EmptyState title="No numeric goals" subtitle="Create numeric goals to track counts/quantities." />
-    ) : (
-      <div className="grid grid-cols-1 gap-4">
-        {numericBlocks.map(({ goal, current, series, last3 }) => (
-          <GoalStatCard
-            key={goal.id}
-            goal={{ ...goal, currency_code: null }}
-            currentValue={current}
-            fmt={fmtMeasure}
-            series={series}
-            last3={last3}
-          />
-        ))}
-      </div>
-    )}
-  </div>
-)}
-
-              {/* Qualitative Goals – status pills */}
-              {/* Qualitative section */}
-{visibleSections.includes('qualitative') && (
-  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 flex flex-col h-full">
-    <h3 className="text-lg font-medium mb-4">Qualitative Goals</h3>
-    {qualitativeList.length === 0 ? (
-      <EmptyState title="No qualitative goals" subtitle="Create qualitative goals to track status." />
-    ) : (
-      <div className="grid grid-cols-1 gap-4">
-        {qualitativeList.map(goal => {
-          const status = 'In Progress'; // TODO: replace with schema-backed status
-          return (
-            <div
-              key={goal.id}
-              className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-4 flex flex-col gap-3"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 w-full">
-                  <div className="text-sm text-gray-500 dark:text-gray-400">Goal</div>
-                  {/* title takes full row */}
-                  <div className="font-semibold text-gray-900 dark:text-gray-100 break-words">{goal.title}</div>
+                  {/* Optional overall donut */}
+                  {donut && (
+                    <div className="mt-6 flex flex-col items-center">
+                      <MinimalPieChart
+                        data={[{ value: donutPct }]}
+                        totalValue={100}
+                        lineWidth={15}
+                        label={() => `${donutPct}%`}
+                        labelStyle={{ fontSize: '18px', fontWeight: 600 }}
+                        background="lightgray"
+                        animate
+                        style={{ height: '140px', width: '140px' }}
+                      />
+                      <div className="mt-3 text-xs text-gray-500">Overall progress</div>
+                    </div>
+                  )}
                 </div>
-                <span className="px-2 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-200">
-                  {status}
-                </span>
-              </div>
+              )}
 
-              <p className="text-sm text-gray-600 dark:text-gray-300">
-                Track notes, milestones, or review outcomes. You can attach checklists or rubrics to quantify progress.
-              </p>
+              {/* Numeric (non-category) */}
+              {visibleSections.includes('numeric') && (
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 flex flex-col h-full">
+                  <h3 className="text-lg font-medium mb-4">Numeric Goals</h3>
+                  {numericRegularBlocks.length === 0 ? (
+                    <EmptyState title="No numeric goals" subtitle="Create numeric goals to track counts/quantities." />
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4">
+                      {numericRegularBlocks.map(({ goal, current, series, last3 }) => (
+                        <GoalStatCard
+                          key={goal.id}
+                          goal={{ ...goal, currency_code: null }}
+                          currentValue={current}
+                          fmt={fmtMeasure}
+                          series={series}
+                          last3={last3}
+                        />
+                        
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
-              <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                <span className="inline-flex h-2 w-2 rounded-full bg-yellow-500" />
-                Awaiting next update
-              </div>
+ 
+
+              {/* Qualitative */}
+              {visibleSections.includes('qualitative') && (
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 flex flex-col h-full">
+                  <h3 className="text-lg font-medium mb-4">Qualitative Goals</h3>
+                  {qualitativeList.length === 0 ? (
+                    <EmptyState title="No qualitative goals" subtitle="Create qualitative goals to track status." />
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4">
+                      {qualitativeList.map(goal => {
+                        const status = 'In Progress'; // TODO: wire real status field if available
+                        return (
+                          <div
+                            key={goal.id}
+                            className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-4 flex flex-col gap-3"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0 w-full">
+                                <div className="text-sm text-gray-500 dark:text-gray-400">Goal</div>
+                                <div className="font-semibold text-gray-900 dark:text-gray-100 break-words">{goal.title}</div>
+                              </div>
+                              <span className="px-2 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-200">
+                                {status}
+                              </span>
+                            </div>
+
+                            <p className="text-sm text-gray-600 dark:text-gray-300">
+                              Track notes, milestones, or review outcomes. You can attach checklists or rubrics to quantify progress.
+                            </p>
+
+                            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                              <span className="inline-flex h-2 w-2 rounded-full bg-yellow-500" />
+                              Awaiting next update
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+
+                          
+
             </div>
-          );
-        })}
-      </div>
-    )}
+
+           {/* Category sections (compact rails) */}
+{selectedEmployeeId && visibleCategories.length > 0 && (
+  <div className="mb-10">
+    <div className="mb-2 flex items-center justify-between">
+      <h2 className="text-xl font-semibold">Growth & Development</h2>
+      <span className="text-sm text-gray-500 dark:text-gray-400">
+        {visibleCategories.length} categor{visibleCategories.length === 1 ? 'y' : 'ies'}
+      </span>
+    </div>
+
+    <div className="space-y-6">
+      {visibleCategories.map((key) => (
+        <CategoryRail
+          key={key}
+          title={CATEGORY_LABELS[key]}
+          blocks={categoryBlocks[key]}
+          fmt={fmtMeasure}
+        />
+      ))}
+    </div>
   </div>
 )}
 
 
-            </div>
-
-            {/* Top & Bottom */}
+            {/* Top & Bottom performers */}
             <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
                 <h4 className="text-md font-semibold mb-2">🏅 Top Performers</h4>

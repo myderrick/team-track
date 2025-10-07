@@ -305,45 +305,45 @@ const periodKey = typeof period === 'string' ? period : JSON.stringify(period ??
           <Disclosure key={emp.id} as="div" className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden shadow-sm">
             {({ open }) => (
               <>
-                <Disclosure.Button className="w-full flex justify-between items-center px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200 flex items-center justify-center text-sm font-semibold">
-                      {initials(emp.full_name)}
-                    </div>
-                    <div>
-                      <div className="font-medium text-gray-900 dark:text-gray-100">{emp.full_name}</div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">
-                        {(emp.title || emp.role || '—')}
-                        {(emp.department || emp.location) && (
-                          <span className="ml-2 text-gray-400">• {emp.department || emp.location}</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+          <Disclosure.Button className="w-full flex justify-between items-center px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200 flex items-center justify-center text-sm font-semibold">
+                {initials(emp.full_name)}
+              </div>
+              <div>
+                <div className="font-medium text-gray-900 dark:text-gray-100">{emp.full_name}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+            {(emp.title || emp.role || '—')}
+            {(emp.department || emp.location) && (
+              <span className="ml-2 text-gray-400">• {emp.department || emp.location}</span>
+            )}
+                </div>
+              </div>
+            </div>
 
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-1 text-sm">
-                      <TrendingUp className="w-4 h-4 text-gray-400" />
-                      <span className={`font-semibold ${perf.overall.trendType === 'down' ? 'text-red-600' : 'text-green-600'}`}>
-                        {perf.overall.trend}
-                      </span>
-                    </div>
-                    <div className="min-w-[64px] text-right">
-                      <div className="text-lg font-bold">{perf.overall.scorePct}%</div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">Overall</div>
-                    </div>
-                    {open ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
-                  </div>
-                </Disclosure.Button>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1 text-sm">
+                <TrendingUp className="w-4 h-4 text-gray-400" />
+                <span className={`font-semibold ${perf.overall.trendType === 'down' ? 'text-red-600' : 'text-green-600'}`}>
+            {perf.overall.trend}
+                </span>
+              </div>
+              <div className="min-w-[64px] text-right">
+                <div className="text-lg font-bold">{perf.overall.scorePct}%</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">Overall</div>
+              </div>
+              {open ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+            </div>
+          </Disclosure.Button>
 
-                <Disclosure.Panel className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 bg-white dark:bg-gray-900">
-                  <IndividualKpiCard user={emp} {...perf.overall} />
-                  <GoalProgressCard user={emp} progress={perf.goals} latestByGoalId={perf.latestByGoalId} />
-                  <LagIndicatorCard user={emp} lagDays={perf.lagDays} />
-                  <SparklineCard user={emp} series={perf.series} />
-                  <FeedbackSkillsCard user={emp} skills={[]} feedback={perf.feedback} />
-                  <TrainingCard user={emp} records={perf.training} />
-                </Disclosure.Panel>
+          <Disclosure.Panel className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 bg-white dark:bg-gray-900">
+            <IndividualKpiCard user={emp} {...perf.overall} />
+            <GoalProgressCard user={emp} progress={perf.goals} latestByGoalId={perf.latestByGoalId} />
+            <LagIndicatorCard user={emp} lagDays={perf.lagDays} />
+            <SparklineCard user={emp} series={perf.series} />
+            <FeedbackSkillsCard user={emp} skills={[]} feedback={perf.feedback} />
+            <TrainingCard user={emp} records={perf.training} />
+          </Disclosure.Panel>
               </>
             )}
           </Disclosure>

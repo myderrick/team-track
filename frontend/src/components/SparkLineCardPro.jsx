@@ -6,24 +6,19 @@ function Delta({ now, prev }) {
   if (now == null || prev == null) return null;
   const diff = now - prev;
   const sign = diff > 0 ? '+' : diff < 0 ? '−' : '';
-  const cls =
-    diff > 0 ? 'text-green-600 dark:text-green-400' :
-    diff < 0 ? 'text-rose-600 dark:text-rose-400' :
-    'text-gray-600 dark:text-gray-300';
+  const cls = diff > 0 ? 'text-green-600 dark:text-green-400'
+           : diff < 0 ? 'text-rose-600 dark:text-rose-400'
+           : 'text-gray-600 dark:text-gray-300';
   return <span className={`ml-2 text-xs ${cls}`}>{sign}{Math.abs(diff)}</span>;
 }
 
-// series: [{ ts: '2025-10-03', value: 12 }, ...]
-export default function SparklineCardPro({ title, user = {}, series = [] }) {
-  const name = title || user.full_name || user.name || 'Metric';
-
+export default function SparklineCardPro({ title, series = [] }) {
   const { last, prev, yDomain } = useMemo(() => {
     const vals = series.map(d => d.value).filter(v => v != null);
-    const last = vals.length ? vals[vals.length - 1] : null;
-    const prev = vals.length > 1 ? vals[vals.length - 2] : null;
-    // Add 5% headroom
-    const min = Math.min(...vals, 0);
-    const max = Math.max(...vals, 1);
+    const last = vals.at(-1) ?? null;
+    const prev = vals.length > 1 ? vals.at(-2) : null;
+    const min = vals.length ? Math.min(...vals) : 0;
+    const max = vals.length ? Math.max(...vals) : 1;
     const pad = Math.max(1, (max - min) * 0.05);
     return { last, prev, yDomain: [min - pad, max + pad] };
   }, [series]);
@@ -31,17 +26,16 @@ export default function SparklineCardPro({ title, user = {}, series = [] }) {
   return (
     <section className="p-4 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-800/70 backdrop-blur shadow-sm">
       <div className="flex items-center justify-between mb-2">
-        <h4 className="text-sm font-medium">{name}</h4>
+        <h4 className="text-sm font-medium">{title || 'KPI'}</h4>
         <div className="text-sm font-semibold">
-          {last ?? '—'}
-          <Delta now={last} prev={prev} />
+          {last ?? '—'} <Delta now={last} prev={prev} />
         </div>
       </div>
 
       {series.length === 0 ? (
         <div className="text-xs text-gray-500">No data</div>
       ) : (
-        <div className="h-12">
+        <div className="h-12 text-purple-600 dark:text-purple-400">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={series} margin={{ left: 0, right: 0, top: 4, bottom: 0 }}>
               <Tooltip
@@ -57,32 +51,11 @@ export default function SparklineCardPro({ title, user = {}, series = [] }) {
                   );
                 }}
               />
-              <defs>
-                <linearGradient id="spark" x1="0" x2="1" y1="0" y2="0">
-                  <stop offset="0%" stopColor="currentColor" stopOpacity="0.9" />
-                  <stop offset="100%" stopColor="currentColor" stopOpacity="0.6" />
-                </linearGradient>
-              </defs>
-              <Line
-                type="monotone"
-                dataKey="value"
-                stroke="currentColor"
-                strokeWidth={2}
-                dot={false}
-                isAnimationActive={false}
-                strokeOpacity={0.9}
-              />
+              <Line type="monotone" dataKey="value" stroke="currentColor" strokeWidth={2} dot={false} isAnimationActive={false}/>
             </LineChart>
           </ResponsiveContainer>
         </div>
       )}
     </section>
   );
-}
-
-/* ---- Example mapper from KPI measurements -> series ----
-row: app.kpi_measurements { measured_on (date), value (numeric) }
-*/
-export function mapMeasurementRow(row) {
-  return { ts: row.measured_on, value: Number(row.value) };
 }

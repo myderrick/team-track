@@ -12,6 +12,9 @@ import SparklineCard from '@/components/SparkLineCard';
 import FeedbackSkillsCard from '@/components/FeedbackSkillsCard';
 import TrainingCard from '@/components/TrainingCard';
 import EmptyState from '@/components/EmptyState';
+import SparklineCardPro from './SparkLineCardPro';
+import { useKpiSeries } from '@/hooks/useKpiSeries';
+import TrainingCardPro from './TrainingCardPro';
 
 // ---------- helpers ----------
 const isEmail = (v = '') => /\S+@\S+\.\S+/.test(v);
@@ -340,9 +343,9 @@ const periodKey = typeof period === 'string' ? period : JSON.stringify(period ??
             <IndividualKpiCard user={emp} {...perf.overall} />
             <GoalProgressCard user={emp} progress={perf.goals} latestByGoalId={perf.latestByGoalId} />
             <LagIndicatorCard user={emp} lagDays={perf.lagDays} />
-            <SparklineCard user={emp} series={perf.series} />
+            <SparklineCardPro user={emp} series={perf.series} />
             <FeedbackSkillsCard user={emp} skills={[]} feedback={perf.feedback} />
-            <TrainingCard user={emp} records={perf.training} />
+            <TrainingCardPro user={emp} records={perf.training} />
           </Disclosure.Panel>
               </>
             )}

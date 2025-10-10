@@ -92,11 +92,7 @@ const { activities, loading: actLoading } = useRecentActivity({ orgId, limit: 20
 
   const [view, setView] = useState('individual');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [darkMode, setDarkMode] = useState(() => {
-    const saved = localStorage.getItem('darkMode');
-    if (saved !== null) return saved === 'true';
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
-  });
+ 
 // Default to "This Year"
   const [periodLabel, setPeriodLabel] = useState('This Year');
   const period = React.useMemo(() => periodFromLabel(periodLabel), [periodLabel]);
@@ -118,19 +114,17 @@ const { activities, loading: actLoading } = useRecentActivity({ orgId, limit: 20
     }
   }, [locations, loading]);
 
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', darkMode);
-    localStorage.setItem('darkMode', darkMode);
-  }, [darkMode]);
+
 
    return (
-    <><div className="flex h-screen overflow-hidden text-gray-800 dark:text-gray-100">
+    <><div className="flex h-screen overflow-hidden bg-[var(--bg)] text-[var(--fg)]">
+
+
        <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
        <div className="flex-1 flex flex-col">
          <TopBar
            onMenuClick={() => setSidebarOpen(o => !o)}
-           darkMode={darkMode}
-           onToggleDark={() => setDarkMode(m => !m)} />
+           />
 
          <FilterBar
            title="Dashboard"
@@ -231,7 +225,6 @@ const { activities, loading: actLoading } = useRecentActivity({ orgId, limit: 20
          </main>
        </div>
      </div>
-       // near end of Dashboard render:
        <AddWidgetDialog
          open={addOpen}
          onClose={() => setAddOpen(false)}

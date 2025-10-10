@@ -1,4 +1,4 @@
-// frontend/src/components/GoalProgressCard.jsx
+// src/components/GoalProgressCard.jsx
 import React from 'react';
 import { RadialBarChart, RadialBar } from 'recharts';
 import EmptyState from '@/components/EmptyState';
@@ -46,31 +46,28 @@ function derivePercent({ start_value, current_value, target_value }) {
   }
   return 0;
 }
-// --- minimal + deterministic resolver ---
+
 function getLatestValue(latestMap, id) {
- if (!latestMap || id == null) return undefined;
- const key = String(id);
- let entry;
- if (latestMap instanceof Map) {
-  entry = latestMap.get(key);
- } else if (Object.prototype.hasOwnProperty.call(latestMap, key)) {
-  entry = latestMap[key];
- }
- if (entry === undefined) return undefined;
- // FIX: Ensure we read the nested 'value' property before returning
- if (entry && typeof entry === 'object' && 'value' in entry) return entry.value; 
- return entry;
+  if (!latestMap || id == null) return undefined;
+  const key = String(id);
+  let entry;
+  if (latestMap instanceof Map) {
+    entry = latestMap.get(key);
+  } else if (Object.prototype.hasOwnProperty.call(latestMap, key)) {
+    entry = latestMap[key];
+  }
+  if (entry === undefined) return undefined;
+  if (entry && typeof entry === 'object' && 'value' in entry) return entry.value;
+  return entry;
 }
 
 function normalizeGoal(raw, latestMap) {
   const key = raw.goal_id ?? raw.id ?? raw.goalId ?? raw.key ?? null;
 
-  // ✅ pull from latest map if available
   const latest = getLatestValue(latestMap, key);
   const latestNum = Number(latest);
   const hasLatest = Number.isFinite(latestNum);
 
-  // fallback to whatever came from the parent
   const rawCurrent = raw.current_value ?? raw.current ?? raw.value;
   const rawCurrentNum = Number(rawCurrent);
   const hasRawCurrent = Number.isFinite(rawCurrentNum);
@@ -92,7 +89,6 @@ function normalizeGoal(raw, latestMap) {
   let currency = (raw.currency ?? raw.currency_code ?? '').toString().trim().toUpperCase();
   if (!/^[A-Z]{3}$/.test(currency)) currency = '';
 
-  // ✅ always derive percent using the *effective* current/target/start
   const percent = derivePercent({ start_value, current_value, target_value });
 
   return {
@@ -108,8 +104,6 @@ function normalizeGoal(raw, latestMap) {
   };
 }
 
-
-
 // ---------- component ----------
 /**
  * @param {{
@@ -119,11 +113,10 @@ function normalizeGoal(raw, latestMap) {
  * }} props
  */
 export default function GoalProgressCard({ user = {}, progress = [], latestByGoalId = null }) {
-  console.log('GoalProgressCard render', { user, progress, latestByGoalId });
   const displayName = user.full_name || user.name || 'Employee';
 
   return (
-    <div className="p-4 bg-white dark:bg-gray-800 rounded-2xl shadow">
+    <div className="card p-4 transition-colors">
       <h4 className="font-semibold mb-2">{displayName}’s Goals</h4>
 
       {!progress || progress.length === 0 ? (
@@ -131,11 +124,6 @@ export default function GoalProgressCard({ user = {}, progress = [], latestByGoa
       ) : (
         progress.map((raw, i) => {
           const g = normalizeGoal(raw, latestByGoalId);
-          console.debug('GoalCard row', {
-  id: g.id,
-  current_value: g.current_value,
-  target_value: g.target_value,
-});
 
           const currentLabel = formatValue({
             value: g.current_value,
@@ -152,9 +140,13 @@ export default function GoalProgressCard({ user = {}, progress = [], latestByGoa
                   currency: g.currency,
                 });
 
+          // Wrap chart with an element that sets currentColor to the accent var.
           return (
             <div key={g.id || i} className="flex items-center mb-4">
-              <div className="relative w-[54px] h-[54px] flex-shrink-0">
+              <div
+                className="relative w-[54px] h-[54px] flex-shrink-0"
+                style={{ color: 'var(--accent)' }} // <- currentColor for the chart
+              >
                 <RadialBarChart
                   width={54}
                   height={54}
@@ -162,37 +154,33 @@ export default function GoalProgressCard({ user = {}, progress = [], latestByGoa
                   cy={27}
                   innerRadius={16}
                   outerRadius={22}
-data={[{ name: g.title, value: Number.isFinite(g.percent) ? clamp(g.percent) : 0 }]}
+                  data={[{ name: g.title, value: Number.isFinite(g.percent) ? clamp(g.percent) : 0 }]}
                 >
                   <RadialBar
                     minAngle={15}
                     clockWise
                     dataKey="value"
-                    fill="#6366f1"
-                    background
+                    fill="currentColor"                      // accent follows theme
+                    background={{ fill: 'var(--border)' }}   // track matches theme border
                   />
                 </RadialBarChart>
                 <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold pointer-events-none">
- {Number.isFinite(g.percent) ? Math.round(g.percent) : 0}%
+                  {Number.isFinite(g.percent) ? Math.round(g.percent) : 0}%
                 </span>
               </div>
 
               <div className="ml-3">
                 <p className="text-sm font-medium">{g.title}</p>
 
-                <p className="text-xs text-gray-700 dark:text-gray-300">
-<span className="opacity-70">Current:</span>{' '}
-         {g.measure_type === 'qualitative' 
-          ? '—' 
-          : (g.current_value === null ? '—' : currentLabel)}
-        </p>
+                <p className="text-xs">
+                  <span className="muted">Current:</span>{' '}
+                  {g.measure_type === 'qualitative' ? '—' : (g.current_value === null ? '—' : currentLabel)}
+                </p>
 
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  + {(g.measure_type === 'qualitative'
+                <p className="text-xs muted">
+                  {g.measure_type === 'qualitative'
                     ? 'In progress'
-                    : `${Number.isFinite(g.percent) ? Math.round(g.percent) : 0}%${
-                        targetLabel !== '—' ? ` of ${targetLabel}` : ''
-                      }`)}
+                    : `+ ${Number.isFinite(g.percent) ? Math.round(g.percent) : 0}%${targetLabel !== '—' ? ` of ${targetLabel}` : ''}`}
                 </p>
               </div>
             </div>

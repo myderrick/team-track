@@ -4,9 +4,15 @@ import {
   CalendarDays, Building2, User, Target, Timer, Filter,
 } from 'lucide-react';
 
+const WRAP =
+  'flex flex-col md:flex-row items-center justify-between px-6 py-3 sticky top-14 z-10 ' +
+  'ml-16 group-hover:ml-64 transition-[margin] duration-200 ' +
+  'border-b bg-[var(--card)] text-[var(--fg)] border-[var(--border)] ' +
+  'backdrop-blur supports-[backdrop-filter]:bg-[color-mix(in oklab,var(--card) 85%, transparent)]';
+
 function Segmented({ value, onChange, options }) {
   return (
-    <div className="inline-flex rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700">
+    <div className="inline-flex rounded-xl overflow-hidden border border-[var(--border)]">
       {options.map((o, i) => {
         const active = value === o.value;
         return (
@@ -15,10 +21,11 @@ function Segmented({ value, onChange, options }) {
             onClick={() => onChange(o.value)}
             aria-pressed={active}
             className={[
-              'px-3 py-2 text-sm transition',
+              'px-3 py-2 text-sm transition focus:outline-none',
+              'focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]',
               active
-                ? 'bg-purple-600 text-white'
-                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700',
+                ? 'bg-[var(--accent)] text-white'
+                : 'bg-[var(--surface)] text-[var(--fg)] hover:opacity-90',
               i === 0 ? 'rounded-l-xl' : '',
               i === options.length - 1 ? 'rounded-r-xl' : '',
             ].join(' ')}
@@ -36,18 +43,19 @@ function LabeledSelect({ icon: Icon, label, value, onChange, children, disabled 
     <label
       className={[
         'inline-flex items-center gap-2 px-3 py-2 rounded-xl border',
-        'border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-800/80 backdrop-blur',
+        'border-[var(--border)] bg-[var(--surface)]',
+        'focus-within:ring-2 focus-within:ring-[var(--accent)] focus-within:ring-offset-2 focus-within:ring-offset-[var(--card)]',
         disabled ? 'opacity-60' : '',
       ].join(' ')}
     >
-      <Icon className="w-4 h-4" />
+      <Icon className="w-4 h-4 text-[var(--fg-muted)]" />
       <span className="sr-only">{label}</span>
       <select
         aria-label={label}
         value={value}
         onChange={onChange}
         disabled={disabled}
-        className="bg-transparent focus:outline-none text-sm"
+        className="bg-transparent text-sm text-[var(--fg)] focus:outline-none"
       >
         {children}
       </select>
@@ -73,17 +81,15 @@ export default function GoalsFilterBar({
   aggMode, setAggMode,
 }) {
   return (
-    <div className="flex flex-col md:flex-row items-center justify-between px-6 py-3 sticky top-14 z-10 ml-16 group-hover:ml-64 transition-[margin] duration-200
-      border-b border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-800/70 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+    <div className={WRAP} role="region" aria-label="Goals and KPI filters">
       <div className="min-w-0">
-        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100 truncate">{title}</h1>
+        <h1 className="text-xl font-semibold truncate">{title}</h1>
         {subtitle && (
-          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{subtitle}</p>
+          <p className="text-xs text-[var(--fg-muted)] truncate">{subtitle}</p>
         )}
       </div>
 
       <div className="flex items-center gap-3 mt-3 md:mt-0">
-
         {/* Quarter */}
         <LabeledSelect icon={CalendarDays} label="Quarter" value={quarter} onChange={e => setQuarter(e.target.value)}>
           {quarterOptions.map(q => <option key={q} value={q}>{q}</option>)}
@@ -99,7 +105,7 @@ export default function GoalsFilterBar({
           {teamOptions.map(n => <option key={n} value={n}>{n}</option>)}
         </LabeledSelect>
 
-        {/* Goal type (title) */}
+        {/* Goal type */}
         <LabeledSelect icon={Target} label="Goal" value={goalType} onChange={e => setGoalType(e.target.value)}>
           {goalTypeOptions.map(t => <option key={t} value={t}>{t}</option>)}
         </LabeledSelect>
@@ -109,27 +115,29 @@ export default function GoalsFilterBar({
           {datePresets.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
         </LabeledSelect>
 
-        {/* Custom range (only when selected) */}
+        {/* Custom range */}
         {timeline === 'CUSTOM' && (
           <div className="flex items-center gap-2">
-            <label className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-800/80">
-              <Filter className="w-4 h-4" />
+            <label className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-[var(--border)] bg-[var(--surface)]
+                               focus-within:ring-2 focus-within:ring-[var(--accent)] focus-within:ring-offset-2 focus-within:ring-offset-[var(--card)]">
+              <Filter className="w-4 h-4 text-[var(--fg-muted)]" />
               <span className="sr-only">Custom start</span>
               <input
                 type="date"
                 value={customRange.start}
                 onChange={e => setCustomRange({ ...customRange, start: e.target.value })}
-                className="bg-transparent focus:outline-none text-sm"
+                className="bg-transparent text-sm text-[var(--fg)] focus:outline-none"
               />
             </label>
-            <span className="text-xs text-gray-500">to</span>
-            <label className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-800/80">
+            <span className="text-xs text-[var(--fg-muted)]">to</span>
+            <label className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-[var(--border)] bg-[var(--surface)]
+                               focus-within:ring-2 focus-within:ring-[var(--accent)] focus-within:ring-offset-2 focus-within:ring-offset-[var(--card)]">
               <span className="sr-only">Custom end</span>
               <input
                 type="date"
                 value={customRange.end}
                 onChange={e => setCustomRange({ ...customRange, end: e.target.value })}
-                className="bg-transparent focus:outline-none text-sm"
+                className="bg-transparent text-sm text-[var(--fg)] focus:outline-none"
               />
             </label>
           </div>

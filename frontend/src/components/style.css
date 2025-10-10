@@ -10,10 +10,10 @@
 
     body {
         font-family: 'Inter', system-ui, sans-serif;
-        background-color: #e8f0f9 !important
+        /* background-color: #e8f0f9 important; */
             /* Tailwind's bg-blue-100 */
             /* Tailwind's bg-gray-100 */
-        ;
+        
         font-size: 80% !important;
     }
 

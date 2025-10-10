@@ -1,4 +1,3 @@
-// src/components/TrainingCardPro.jsx
 import React, { useMemo } from 'react';
 
 export default function TrainingCardPro({ user = {}, records = [] }) {
@@ -17,22 +16,24 @@ export default function TrainingCardPro({ user = {}, records = [] }) {
   }, [records]);
 
   return (
-    <section className="p-5 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-800/70 backdrop-blur shadow-sm">
+    <section className="card p-5 backdrop-blur-sm transition-colors">
       <h3 className="text-base font-semibold">{name}’s Assigned Reviews</h3>
+
       {summary.total === 0 ? (
-        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">No assignments yet.</p>
+        <p className="mt-2 text-sm muted">No assignments yet.</p>
       ) : (
         <div className="mt-4 flex items-center gap-4">
           <ProgressRing value={summary.pct} />
           <div className="text-sm">
             <p><span className="font-medium">Completed:</span> {summary.completed}</p>
             <p><span className="font-medium">In Progress:</span> {summary.inProgress}</p>
-            <p className="text-gray-600 dark:text-gray-300">Not Started: {summary.notStarted}</p>
+            <p className="muted">Not Started: {summary.notStarted}</p>
+
             {summary.next && (
               <div className="mt-2 text-xs">
-                <div className="text-gray-500 dark:text-gray-400">Next up</div>
+                <div className="muted">Next up</div>
                 <div className="font-medium">{summary.next.title}</div>
-                {summary.next.due && <div className="text-gray-500 dark:text-gray-400">Due {summary.next.due}</div>}
+                {summary.next.due && <div className="muted">Due {summary.next.due}</div>}
               </div>
             )}
           </div>
@@ -46,13 +47,17 @@ function ProgressRing({ value = 0, size = 64, stroke = 8 }) {
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   const dash = Math.round((value / 100) * c);
+
   return (
     <div role="img" aria-label={`Completion ${value}%`} className="relative" style={{ width: size, height: size }}>
       <svg width={size} height={size}>
-        <circle cx={size/2} cy={size/2} r={r} strokeWidth={stroke} className="fill-none stroke-gray-200 dark:stroke-gray-700"/>
-        <circle cx={size/2} cy={size/2} r={r} strokeWidth={stroke}
-          className="fill-none stroke-purple-600 dark:stroke-purple-400 transition-[stroke-dasharray]"
-          strokeDasharray={`${dash} ${c - dash}`} strokeLinecap="round"
+        {/* track from theme border */}
+        <circle cx={size/2} cy={size/2} r={r} strokeWidth={stroke} fill="none" stroke="var(--border)" />
+        {/* progress from theme accent */}
+        <circle
+          cx={size/2} cy={size/2} r={r} strokeWidth={stroke} fill="none"
+          stroke="var(--accent)" strokeLinecap="round"
+          strokeDasharray={`${dash} ${c - dash}`}
           transform={`rotate(-90 ${size/2} ${size/2})`}
         />
       </svg>

@@ -29,53 +29,58 @@ const STAFF_ITEMS = [
 
 export default function Sidebar({ variant }) {
   const { pathname } = useLocation();
-  const mode = useMemo(() => {
-    if (variant) return variant;
-    return pathname.startsWith('/staff') ? 'staff' : 'org';
-  }, [variant, pathname]);
-
+  const mode = useMemo(() => (variant ? variant : pathname.startsWith('/staff') ? 'staff' : 'org'), [variant, pathname]);
   const navItems = mode === 'staff' ? STAFF_ITEMS : ORG_ITEMS;
 
   return (
     <div className="fixed inset-y-0 left-0 z-[1000] flex group">
-      <aside className="
-        flex flex-col h-full bg-white dark:bg-gray-800 shadow-lg overflow-hidden
-        transition-all duration-200 ease-in-out w-16 group-hover:w-64 mt-1.5
-      ">
-        <div>
-          <div className="flex items-center justify-center h-16">
-            <img src={logo} alt="Team Track" className="h-18 w-auto" />
-          </div>
-          <hr className="border-gray-200 dark:border-gray-700" />
-          <nav className="mt-4" aria-label="Sidebar Navigation">
-            <ul className="flex flex-col items-start space-y-2">
-              {navItems.map(item => (
-                <li key={item.href} className="w-full">
-                  <NavLink
-                    to={item.href}
-                    title={item.label}
-                    className={({ isActive }) => `
-                      group flex items-center w-full px-4 py-2 transition-colors
-                      ${isActive
-                        ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300'
-                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'}
-                    `}
-                  >
-                    <item.Icon className="w-6 h-6 flex-shrink-0" />
-                    <span className="
+      <aside
+        className="
+          flex flex-col h-full overflow-hidden shadow-lg transition-all duration-200 ease-in-out
+          w-16 group-hover:w-64 mt-1.5
+          bg-[var(--card)] text-[var(--fg)] border-r border-[var(--border)]
+        "
+      >
+        {/* Logo */}
+        <div className="flex items-center justify-center h-16">
+          <img src={logo} alt="Team Track" className="h-8 w-auto" />
+        </div>
+        <hr className="border-[var(--border)]" />
+
+        {/* Nav */}
+        <nav className="mt-4" aria-label="Sidebar Navigation">
+          <ul className="flex flex-col items-start space-y-1">
+            {navItems.map(item => (
+              <li key={item.href} className="w-full">
+                <NavLink
+                  to={item.href}
+                  title={item.label}
+                  className={({ isActive }) => [
+                    'group flex items-center w-full px-4 py-2 transition-colors rounded-r-xl',
+                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]',
+                    isActive
+                      ? 'bg-[color-mix(in oklab,var(--accent) 16%, transparent)] text-[var(--accent)]'
+                      : 'hover:bg-[var(--surface)] text-[var(--fg)]'
+                  ].join(' ')}
+                  aria-current={({ isActive }) => (isActive ? 'page' : undefined)}
+                >
+                  <item.Icon className="w-6 h-6 flex-shrink-0" />
+                  <span
+                    className="
                       ml-3 text-sm whitespace-nowrap
                       opacity-0 group-hover:opacity-100
                       transition-opacity duration-200
-                    ">
-                      {item.label}
-                    </span>
-                  </NavLink>
-                </li>
-              ))}
-            </ul>
-          </nav>
-        </div>
+                    "
+                  >
+                    {item.label}
+                  </span>
+                </NavLink>
+              </li>
+            ))}
+          </ul>
+        </nav>
 
+        {/* Footer actions */}
         <div className="mt-auto mb-4 px-2">
           {[
             { label: 'Logout', Icon: ArrowRightEndOnRectangleIcon, onClick: () => {/* wire supabase.auth.signOut() */} },
@@ -84,8 +89,13 @@ export default function Sidebar({ variant }) {
             <button
               key={label}
               onClick={onClick}
-              className="group flex items-center w-full px-4 py-2 rounded transition-colors
-                         text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+              className="
+                group flex items-center w-full px-4 py-2 rounded transition-colors
+                text-[var(--fg)] hover:bg-[var(--surface)]
+                focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]
+                focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]
+              "
+              type="button"
             >
               <Icon className="w-6 h-6 flex-shrink-0" />
               <span className="ml-3 text-sm whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200">

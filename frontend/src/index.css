@@ -1,62 +1,57 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
+/* src/index.css */
 @import "tailwindcss";
 
-/* Now inject your overrides into Tailwind’s preflight */
+/* Tokens + system color-scheme for native UI */
 @layer base {
-  html {
-    /* 0.95 × 16px = 15.2px base, so all rems shrink 5% */
-    font-size: 90%;
+  :root { 
+    /* light */
+    --bg:        #e8f0f9;        /* page background */
+    --surface:   #f1f5f9;        /* bars/toolbars */
+    --card:      #ffffff;        /* cards/panels */
+    --border:    rgba(0,0,0,0.12);
+    --fg:        #0f172a;        /* text */
+    --fg-muted:  #475569;
+    color-scheme: light;
+    --accent:    #6366f1;       /* indigo-500 */
   }
 
+    * { scrollbar-color: var(--border) transparent; }
+
+  .dark {
+    --bg:        #0b1220;        /* slate-950-ish */
+    --surface:   #1f2937;        /* gray-800 */
+    --card:      #0f172a;        /* slate-900 */
+    --border:    rgba(255,255,255,0.12);
+    --fg:        #e5e7eb;        /* text */
+    --fg-muted:  #9ca3af;
+    color-scheme: dark;
+    --accent:    #818cf8;       /* indigo-400 */
+  }
+
+  html { font-size: 90%; }
   body {
-    font-family: 'Inter', system-ui, sans-serif !important;
-    background-color: #d2eaff
-      /* Tailwind's bg-gray-100 */
-    ;
-    font-size: 80% !important;
-  }
-
-  .MuiTypography-root {
-    font-family: 'Inter', system-ui, sans-serif !important;
-  }
-
-  .MuiButton-root {
-    font-family: 'Inter', system-ui, sans-serif !important;
-  }
-
-  .MuiInputBase-root {
-    font-family: 'Inter', system-ui, sans-serif !important;
-  }
-
-  .MuiInputLabel-root {
-    font-family: 'Inter', system-ui, sans-serif !important;
-  }
-
-  .MuiFormControl-root {
-    font-family: 'Inter', system-ui, sans-serif !important;
-  }
-
-  .MuiFormHelperText-root {
-    font-family: 'Inter', system-ui, sans-serif !important;
-  }
-
-  .MuiCheckbox-root {
-    font-family: 'Inter', system-ui, sans-serif !important;
-  }
-
-  /* MUI input overrides */
-  .MuiInputBase-input {
-    font-family: 'Inter', system-ui, sans-serif !important;
-    font-size: 0.80rem !important;
-    /* 14px */
-  }
-
-  /* MUI button overrides */
-  .MuiButton-root {
-    font-family: 'Inter', system-ui, sans-serif !important;
-    font-size: 0.80rem !important;
-    /* 14px */
-    text-transform: none !important;
+    font-family: 'Inter', system-ui, sans-serif;
+    background-color: var(--bg);
+    color: var(--fg);
+    font-size: 80%;
   }
 }
+
+@layer components {
+  /* already suggested earlier, keep if present */
+  .card { @apply rounded-2xl shadow bg-[var(--card)] text-[var(--fg)] border border-[var(--border)]; }
+  .toolbar { @apply bg-[var(--surface)] text-[var(--fg)] border-b border-[var(--border)]; }
+  .muted { @apply text-[var(--fg-muted)]; }
+}
+
+/* color-aware background that works on both themes */
+@layer utilities {
+  .tint {
+    /* use current text color as a soft bg; darker in dark mode */
+    background-color: color-mix(in oklab, currentColor 14%, transparent);
+  }
+  .dark .tint {
+    background-color: color-mix(in oklab, currentColor 26%, transparent);
+  }
+}
+

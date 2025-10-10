@@ -10,20 +10,26 @@ export default function IndividualKpiCard({ user = {}, scorePct, trend, trendTyp
   const tLabel = typeof trend === 'string' ? trend : '+0%';
 
   return (
-    <div className="p-4 bg-white dark:bg-gray-800 rounded-2xl shadow">
+    <div className="card p-4 flex flex-col justify-between transition-colors">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-semibold">{name}</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{team}</p>
+          <h3 className="text-lg font-semibold text-[var(--fg)]">{name}</h3>
+          <p className="text-sm muted">{team}</p>
         </div>
-        <div className="text-2xl font-bold">{pct}%</div>
+        <div className="text-2xl font-bold text-[var(--fg)]">{pct}%</div>
       </div>
-      <div className="mt-2 flex items-center text-sm">
-        {tType === 'up'
-          ? <ArrowUp className="w-4 h-4 text-green-500" />
-          : <ArrowDown className="w-4 h-4 text-red-500" />
-        }
-        <span className={`ml-1 ${tType === 'up' ? 'text-green-500' : 'text-red-500'}`}>
+
+      <div className="mt-3 flex items-center text-sm">
+        {tType === 'up' ? (
+          <ArrowUp className="w-4 h-4 text-green-600 dark:text-green-400" />
+        ) : (
+          <ArrowDown className="w-4 h-4 text-red-600 dark:text-red-400" />
+        )}
+        <span
+          className={`ml-1 font-medium ${
+            tType === 'up' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+          }`}
+        >
           {tLabel}
         </span>
       </div>

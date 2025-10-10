@@ -23,7 +23,7 @@ export default function TopBar({ onMenuClick, darkMode, onToggleDark }) {
     navigate('/login', { replace: true });
   }
 
-console.log('TopBar profile id:', profile?.id);
+// console.log('TopBar profile id:', profile?.id);
 
 return (
     <header className="flex items-center justify-between px-6 py-4 bg-white dark:bg-gray-800 shadow sticky top-0 z-50">

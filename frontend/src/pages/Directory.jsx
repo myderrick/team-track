@@ -7,10 +7,25 @@ import OrgSwitcher from '@/components/OrgSwitcher';
 import EmptyState from '@/components/EmptyState';
 import { supabase } from '@/lib/supabaseClient';
 import { useOrg } from '@/context/OrgContext';
+import { useNavigate } from 'react-router-dom';
+import DirectoryFilterBar from '@/components/DirectoryFilterBar';
+import useDebouncedValue from '@/hooks/useDebouncedValue';
+import useSearchParamsState from '@/hooks/useSearchParamsState';
 
-const quarterOptions = ['Q1 2025', 'Q2 2025', 'Q3 2025', 'Q4 2025'];
+function buildQuarterOptions({ yearsBack = 1, yearsForward = 1 } = {}) {
+  const now = new Date();
+  const Y = now.getFullYear();
+  const labels = [];
+  for (let y = Y - yearsBack; y <= Y + yearsForward; y++) {
+    for (let q = 1; q <= 4; q++) labels.push(`Q${q} ${y}`);
+  }
+  return labels;
+}
+const quarterOptions = buildQuarterOptions({ yearsBack: 1, yearsForward: 1 });
+
 
 export default function Directory() {
+  const navigate = useNavigate();
   const { orgId, locations, departments, employeeCount } = useOrg();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
@@ -22,11 +37,17 @@ export default function Directory() {
   const [quarter, setQuarter] = useState(quarterOptions[1]);
   const [department, setDepartment] = useState('All Departments');
   const [location, setLocation] = useState('All Locations');
+   const [search, setSearch] = useState('');
 
-  const [search, setSearch] = useState('');
+const debouncedSearch = useDebouncedValue(search, 250);
   const [rows, setRows] = useState([]);     // employees for selected org
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+ // Persist filters in the URL
+  useSearchParamsState(
+    { q: quarter, dep: department, loc: location, s: search },
+    { q: setQuarter, dep: setDepartment, loc: setLocation, s: setSearch }
+  );
 
   // Derive location options from org locations
   const locationOptions = useMemo(() => {
@@ -70,13 +91,13 @@ export default function Directory() {
     return (rows || []).filter(u => {
       if (department !== 'All Departments' && (u.department || '') !== department) return false;
       if (location !== 'All Locations' && (u.location || '') !== location) return false;
-      const q = search.trim().toLowerCase();
+const q = debouncedSearch.trim().toLowerCase();
       if (!q) return true;
       return [
         u.full_name, u.email, u.title, u.department, u.location
       ].filter(Boolean).some(x => String(x).toLowerCase().includes(q));
     });
-  }, [rows, search, department, location]);
+  }, [rows, debouncedSearch, department, location]);
 
   return (
     <div className="flex h-screen overflow-hidden text-gray-800 dark:text-gray-100">
@@ -89,45 +110,29 @@ export default function Directory() {
           onToggleDark={() => setDarkMode(m => !m)}
         />
 
-        {/* Filter Bar */}
-        <div className="flex flex-col md:flex-row items-center justify-between px-6 py-4 bg-white dark:bg-gray-800 sticky top-14 z-10 shadow ml-16 group-hover:ml-64 transition-margin duration-200">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Team Directory</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Browse employees in your selected organization</p>
-          </div>
-
-          <div className="mt-4 md:mt-0 flex flex-wrap gap-3 items-center">
-            <OrgSwitcher />
-
-            <select value={quarter} onChange={e => setQuarter(e.target.value)} className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 dark:border-gray-600 focus:outline-none">
-              {quarterOptions.map(q => <option key={q}>{q}</option>)}
-            </select>
-
-            <select value={department} onChange={e => setDepartment(e.target.value)} className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 dark:border-gray-600 focus:outline-none">
-              <option>All Departments</option>
-              {(departments || []).map(d => <option key={d}>{d}</option>)}
-            </select>
-
-            <select value={location} onChange={e => setLocation(e.target.value)} className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 dark:border-gray-600 focus:outline-none">
-              {locationOptions.map(l => <option key={l}>{l}</option>)}
-            </select>
-          </div>
-        </div>
+        {/* Pro filter bar */}
+       <DirectoryFilterBar
+          title="Team Directory"
+          subtitle="Browse employees in your selected organization"
+          quarter={quarter}
+          setQuarter={setQuarter}
+          quarterOptions={quarterOptions}
+          department={department}
+          setDepartment={setDepartment}
+          departmentOptions={['All Departments', ...(departments || [])]}
+          location={location}
+          setLocation={setLocation}
+          locationOptions={locationOptions}
+          search={search}
+          setSearch={setSearch}
+          onAddEmployee={() => navigate('/employees/add')}
+        />
 
         {/* Main Content */}
         <main className="flex-1 ml-16 mt-4 mr-4 mb-4 transition-margin duration-200 group-hover:ml-64 px-6 overflow-auto">
           <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
-            <div className="flex flex-wrap gap-4 mb-6">
-              <input
-                type="search" placeholder="Search name, email, title…"
-                value={search} onChange={e => setSearch(e.target.value)}
-                className="px-3 py-2 border rounded-lg flex-1"
-              />
-            </div>
-
-            {/* Add New Employee Button */}
-            <Link to="/employees/add" className="px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700">Add employee</Link>
-            <div className="my-4 border-t border-gray-200 dark:border-gray-700" />
+            {/* top rule not needed; the filter bar already anchors the section */}
+            <div className="mb-2" />
             {loading ? (
               <div className="text-sm text-gray-500">Loading…</div>
             ) : error ? (

@@ -12,6 +12,19 @@ import TopBar from '@/components/TopBar';
 import { supabase } from '@/lib/supabaseClient';
 import { useOrg } from '@/context/OrgContext';
 import EmptyState from '@/components/EmptyState';
+import GoalsFilterBar from '@/components/GoalsFilterBar';
+import useSearchParamsState from '@/hooks/useSearchParamsState';
+import { CalendarDays } from 'lucide-react'; // if needed elsewhere
+
+function buildQuarterOptions({ yearsBack = 1, yearsForward = 1 } = {}) {
+  const now = new Date();
+  const Y = now.getFullYear();
+  const labels = ['All'];
+  for (let y = Y - yearsBack; y <= Y + yearsForward; y++) {
+    for (let q = 1; q <= 4; q++) labels.push(`Q${q} ${y}`);
+  }
+  return labels;
+}
 
 
 // --- MiniGoalCard.jsx ---
@@ -279,6 +292,30 @@ export default function GoalsKpiTracker() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
 
+  useSearchParamsState(
+  {
+    q: quarter,
+    dep: department,
+    who: teamFilter,
+    goal: goalType,
+    tl: timeline,
+    start: customRange.start,
+    end: customRange.end,
+    agg: aggMode,
+  },
+  {
+    q: setQuarter,
+    dep: setDepartment,
+    who: setTeamFilter,
+    goal: setGoalType,
+    tl: setTimeline,
+    start: (v) => setCustomRange(r => ({ ...r, start: v })),
+    end: (v) => setCustomRange(r => ({ ...r, end: v })),
+    agg: setAggMode,
+  }
+);
+
+
 
  const selectedEmployeeId = useMemo(() => {
   if (teamFilter === 'All') return null;
@@ -463,6 +500,11 @@ let mergedGoals = baseGoals
     return ['All Goals', ...Array.from(new Set(titles))];
   }, [goals]);
 
+  const quarterOptions = useMemo(
+  () => buildQuarterOptions({ yearsBack: 1, yearsForward: 1 }),
+  []
+);
+
   // Filtered measurement rows for charts/blocks
   const filteredRows = useMemo(() => {
     return (measurements || []).filter(r => {
@@ -596,72 +638,42 @@ const visibleCategories = useMemo(
         onToggleDark={() => setDarkMode(m => !m)}
       />
 
-      {/* Filter bar */}
-      <div className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 shadow ml-16 group-hover:ml-64">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Goals and KPIs</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Performance overview{quarter && quarter !== 'All' ? ` for ${quarter}` : ''}
-          </p>
-        </div>
+      
+ <GoalsFilterBar
+   title="Goals & KPIs"
+   subtitle={quarter && quarter !== 'All' ? `Performance overview for ${quarter}` : 'Performance overview'}
+   quarter={quarter}
+   setQuarter={setQuarter}
+   quarterOptions={quarterOptions}
 
-        <div className="flex flex-wrap items-center gap-3">
-          <select value={quarter} onChange={e => setQuarter(e.target.value)}
-                  className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600">
-  {['All','Q1 2025','Q2 2025','Q3 2025','Q4 2025'].map(q => <option key={q}>{q}</option>)}
-          </select>
+   department={department}
+   setDepartment={(v) => {
+     setDepartment(v);
+     // keep person in sync: reset to All if the chosen person isn't in the new department
+     if (v !== 'All Departments') {
+       const valid = employees.some(e => e.full_name === teamFilter && e.department === v);
+       if (!valid) setTeamFilter('All');
+     }
+   }}
+   departmentOptions={departmentOptions}
 
-          <select value={department} onChange={e => setDepartment(e.target.value)}
-                  className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600">
-            {departmentOptions.map(dep => <option key={dep} value={dep}>{dep}</option>)}
-          </select>
+   teamFilter={teamFilter}
+   setTeamFilter={setTeamFilter}
+   teamOptions={nameOptions}
 
-          <select value={teamFilter} onChange={e => setTeamFilter(e.target.value)}
-                  className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600">
-            {nameOptions.map(n => <option key={n} value={n}>{n}</option>)}
-          </select>
+   goalType={goalType}
+   setGoalType={setGoalType}
+   goalTypeOptions={goalTypeOptions}
 
-          <select value={goalType} onChange={e => setGoalType(e.target.value)}
-                  className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600">
-            {goalTypeOptions.map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
+   timeline={timeline}
+   setTimeline={setTimeline}
+   datePresets={datePresets}
+   customRange={customRange}
+   setCustomRange={setCustomRange}
 
-          <select value={timeline} onChange={e => setTimeline(e.target.value)}
-                  className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600">
-            {datePresets.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-          </select>
-
-          {timeline === 'CUSTOM' && (
-            <div className="flex gap-2">
-              <input type="date" value={customRange.start}
-                     onChange={e => setCustomRange({ ...customRange, start: e.target.value })}
-                     className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600" />
-              <input type="date" value={customRange.end}
-                     onChange={e => setCustomRange({ ...customRange, end: e.target.value })}
-                     className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600" />
-            </div>
-          )}
-
-          {/* Agg mode toggle */}
-          <div className="flex items-center gap-2 ml-2">
-            <span className="text-xs text-gray-500 dark:text-gray-400">Value:</span>
-            <div className="inline-flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
-              <button
-                className={`px-3 py-1 text-xs ${aggMode==='avg' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300'}`}
-                onClick={() => setAggMode('avg')}
-              >
-                Avg
-              </button>
-              <button
-                className={`px-3 py-1 text-xs ${aggMode==='latest' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300'}`}
-                onClick={() => setAggMode('latest')}
-              >
-                Latest
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+   aggMode={aggMode}
+   setAggMode={setAggMode}
+ />
 
       <main className="flex-1 ml-20 mt-4 mr-4 mb-4 px-0 overflow-auto">
         {loading ? (

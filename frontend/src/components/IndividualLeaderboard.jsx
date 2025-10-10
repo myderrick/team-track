@@ -8,9 +8,7 @@ import { useOrg } from '@/context/OrgContext';
 import IndividualKpiCard from '@/components/IndividualKpiCard';
 import GoalProgressCard from '@/components/GoalProgressCard';
 import LagIndicatorCard from '@/components/LagIndicatorCard';
-import SparklineCard from '@/components/SparkLineCard';
 import FeedbackSkillsCard from '@/components/FeedbackSkillsCard';
-import TrainingCard from '@/components/TrainingCard';
 import EmptyState from '@/components/EmptyState';
 import SparklineCardPro from './SparkLineCardPro';
 import { useKpiSeries } from '@/hooks/useKpiSeries';
@@ -343,7 +341,9 @@ const periodKey = typeof period === 'string' ? period : JSON.stringify(period ??
             <IndividualKpiCard user={emp} {...perf.overall} />
             <GoalProgressCard user={emp} progress={perf.goals} latestByGoalId={perf.latestByGoalId} />
             <LagIndicatorCard user={emp} lagDays={perf.lagDays} />
-            <SparklineCardPro user={emp} series={perf.series} />
+<div className="text-purple-600 dark:text-purple-400">
+  <SparklineCardPro user={emp} series={perf.series} />
+</div>
             <FeedbackSkillsCard user={emp} skills={[]} feedback={perf.feedback} />
             <TrainingCardPro user={emp} records={perf.training} />
           </Disclosure.Panel>

@@ -15,9 +15,12 @@ import IndividualLeaderboard from '@/components/IndividualLeaderboard';
 import TeamPerformanceChart from '@/components/TeamPerformanceChart';
 import GoalProgress from '@/components/GoalProgress';
 import SmartAlerts from '@/components/SmartAlerts';
-import RecentActivity from '@/components/RecentActivity';
-import AiCoaching from '@/components/AiCoaching';
+import RecentActivityPro from '@/components/RecentActivityPro';
+ import { useRecentActivity } from '@/hooks/useRecentActivity';
+ import AiCoaching from '@/components/AiCoaching';
 import AddWidgetDialog from '@/components/AddWidgetDialog';
+import useSearchParamsState from '@/hooks/useSearchParamsState';
+
 
 
 const periodOptions = [
@@ -82,6 +85,10 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { employeeCount, locations, departments, loading } = useOrg();
 const [addOpen, setAddOpen] = useState(false);
+const { orgId } = useOrg();
+const { activities, loading: actLoading } = useRecentActivity({ orgId, limit: 20 });
+
+  
 
   const [view, setView] = useState('individual');
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -95,6 +102,11 @@ const [addOpen, setAddOpen] = useState(false);
   const period = React.useMemo(() => periodFromLabel(periodLabel), [periodLabel]);
   const [department, setDepartment] = useState('All Departments');
   const [location, setLocation] = useState('');
+
+  useSearchParamsState(
+  { view, period: periodLabel, dept: department, loc: location },
+  { view: setView, period: setPeriodLabel, dept: setDepartment, loc: setLocation }
+);
 
   // sync initial location to first available org location
   useEffect(() => {
@@ -183,9 +195,9 @@ const [addOpen, setAddOpen] = useState(false);
                )
              ) : (
                <>
-                 <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 mb-6">
+                 {/* <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 mb-6">
                    <EmptyState title="No KPIs yet" subtitle="Connect data sources or add KPIs to see cards here." />
-                 </div>
+                 </div> */}
 
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6 items-stretch">
                    <div className="h-full">
@@ -206,8 +218,10 @@ const [addOpen, setAddOpen] = useState(false);
 
                  <div className="-mx-6 px-6 mb-6">
                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
-                     <RecentActivity period={period} />
-                     <SmartAlerts period={period} />
+{actLoading
+     ? <div className="h-40 animate-pulse rounded-2xl bg-gray-200/60 dark:bg-gray-700/50" />
+     : <RecentActivityPro activities={activities} onViewAll={() => navigate('/activity')} />
+   }                     <SmartAlerts period={period} />
                      <AiCoaching period={period} department={department} />
                    </div>
                  </div>

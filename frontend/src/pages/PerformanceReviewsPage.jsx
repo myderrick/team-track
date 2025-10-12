@@ -1,5 +1,5 @@
 // src/pages/PerformanceReviewsPage.jsx
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
     Box,
     Tabs,
@@ -91,6 +91,25 @@ export default function PerformanceReviewsPage() {
         notes: '',
     });
 
+    // sync theme with html.dark using provided CSS tokens
+    useEffect(() => {
+        const saved = localStorage.getItem('theme');
+        if (saved) {
+            const isDark = saved === 'dark';
+            setDarkMode(isDark);
+            document.documentElement.classList.toggle('dark', isDark);
+        } else {
+            // honor system as a default
+            const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+            setDarkMode(prefersDark);
+            document.documentElement.classList.toggle('dark', prefersDark);
+        }
+    }, []);
+    useEffect(() => {
+        document.documentElement.classList.toggle('dark', darkMode);
+        localStorage.setItem('theme', darkMode ? 'dark' : 'light');
+    }, [darkMode]);
+
     // filtered data
     const filteredReviews = useMemo(() => {
         return reviews.filter(r => {
@@ -163,74 +182,89 @@ export default function PerformanceReviewsPage() {
     };
 
     return (
-        <div className="flex flex-col h-screen dark:bg-gray-900 text-gray-800 dark:text-gray-200">
+        <div className="flex flex-col h-screen bg-[var(--bg)] text-[var(--fg)]">
             <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
             <TopBar
                 onMenuClick={() => setSidebarOpen(o => !o)}
                 darkMode={darkMode}
                 onToggleDark={() => setDarkMode(m => !m)}
             />
+
             {/* Filter Bar */}
-            <div className="flex flex-col md:flex-row items-center justify-between px-6 py-4 bg-white dark:bg-gray-800 sticky top-14 z-10 shadow ml-16 
-                        group-hover:ml-64 transition-margin duration-200">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Performance Reviews</h1>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Performance Review for May 4, 2025</p>
-                </div>
-                <div className="mt-4 md:mt-0 flex flex-wrap gap-6 items-center">
-                    <select value={quarter} onChange={e => setQuarter(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-lg bg-white dark:bg-gray-800 dark:border-gray-600 focus:outline-none">
-                        {quarterOptions.map(q => <option key={q}>{q}</option>)}
-                    </select>
-                    <select value={department} onChange={e => setDepartment(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-lg bg-white dark:bg-gray-800 dark:border-gray-600 focus:outline-none">
-                        {deptOptions.map(d => <option key={d}>{d}</option>)}
-                    </select>
-                    <select value={location} onChange={e => setLocation(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-lg bg-white dark:bg-gray-800 dark:border-gray-600 focus:outline-none">
-                        {locationOptions.map(l => <option key={l}>{l}</option>)}
-                    </select>
-                    {/* <button className="flex items-center gap-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition">
-                        <Plus className="w-4 h-4" /> Add Widget
-                    </button> */}
+            <div className="toolbar sticky top-14 z-10 shadow ml-16 px-6 py-4 transition-margin duration-200">
+                <div className="flex flex-col md:flex-row items-center justify-between">
+                    <div>
+                        <h1 className="text-2xl font-bold">Performance Reviews</h1>
+                        <p className="text-sm muted">Performance Review for May 4, 2025</p>
+                    </div>
+                    <div className="mt-4 md:mt-0 flex flex-wrap gap-6 items-center">
+                        <select
+                            value={quarter}
+                            onChange={e => setQuarter(e.target.value)}
+                            className="px-3 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] focus:outline-none"
+                        >
+                            {quarterOptions.map(q => <option key={q}>{q}</option>)}
+                        </select>
+                        <select
+                            value={department}
+                            onChange={e => setDepartment(e.target.value)}
+                            className="px-3 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] focus:outline-none"
+                        >
+                            {deptOptions.map(d => <option key={d}>{d}</option>)}
+                        </select>
+                        <select
+                            value={location}
+                            onChange={e => setLocation(e.target.value)}
+                            className="px-3 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] focus:outline-none"
+                        >
+                            {locationOptions.map(l => <option key={l}>{l}</option>)}
+                        </select>
+                    </div>
                 </div>
             </div>
 
-            <main className="
+            <main
+                className="
           flex-1
-          ml-20                          /* collapsed sidebar width */
+          ml-20
           mt-4
           mr-4
           mb-4
           transition-margin duration-200
-          group-hover:ml-64              /* expanded sidebar width */
           px-0
           overflow-auto
-        ">
-                <div className="flex flex-col h-full bg-white dark:bg-gray-800 rounded-2xl shadow border-card-border p-6">
-                    <Box px={4} py={2} overflow="auto" >
-                        <Paper>
+        "
+            >
+                <div className="flex flex-col h-full card p-6">
+                    <Box px={4} py={2} overflow="auto">
+                        <Paper
+                            elevation={0}
+                            sx={{
+                                backgroundColor: 'var(--surface)',
+                                color: 'var(--fg)',
+                                border: '1px solid var(--border)',
+                                borderRadius: 2,
+                            }}
+                        >
                             <Tabs
                                 value={tab}
                                 onChange={(_, v) => setTab(v)}
-                                variant="fullWidth"           // stretch tabs
-                                textColor="primary"
-                                indicatorColor="primary"
+                                variant="fullWidth"
+                                textColor="inherit"
+                                TabIndicatorProps={{ style: { backgroundColor: 'var(--accent)', height: 4, borderRadius: 2 } }}
                                 sx={{
-                                    // remove default uppercase
                                     '& .MuiTab-root': {
                                         textTransform: 'none',
                                         fontWeight: 600,
                                         fontSize: '0.9rem',
-                                        px: 2,                    // bump horizontal padding
-                                        minHeight: 'auto',        // override MUI’s default minHeight
-                                        marginX: 0.5,             // space between pills
+                                        px: 2,
+                                        minHeight: 'auto',
+                                        mx: 0.5,
                                         transition: 'background 0.2s',
-
+                                        color: 'var(--fg)',
                                     },
-                                    // thicker, rounded indicator
-                                    '& .MuiTabs-indicator': {
-                                        height: 4,
-                                        borderRadius: 2,
-                                        // bgcolor: 'primary.main',
-                                        bgcolor: 'primary.light',
+                                    '& .MuiTab-root.Mui-selected': {
+                                        color: 'var(--accent)',
                                     },
                                 }}
                             >
@@ -243,13 +277,11 @@ export default function PerformanceReviewsPage() {
                                     icon={<ChatIcon />}
                                     iconPosition="start"
                                     label="1-on-1s"
-
                                 />
                             </Tabs>
-
                         </Paper>
 
-                        <Stack direction="row" alignItems="center" justifyContent="space-between" mt={2} bgcolor={"white"}>
+                        <Stack direction="row" alignItems="center" justifyContent="space-between" mt={2}>
                             <Typography variant="h6">
                                 {tab === 0 ? 'Reviews' : '1-on-1s'}
                             </Typography>
@@ -257,23 +289,32 @@ export default function PerformanceReviewsPage() {
                                 startIcon={<Add />}
                                 variant="contained"
                                 onClick={() => handleOpen()}
-                                sx={{ textTransform: 'none', ml: 2 }}
-
+                                disableElevation
+                                sx={{
+                                    textTransform: 'none',
+                                    ml: 2,
+                                    bgcolor: 'var(--accent)',
+                                    color: '#fff',
+                                    '&:hover': { filter: 'brightness(0.95)', bgcolor: 'var(--accent)' },
+                                }}
                             >
                                 Schedule {tab === 0 ? 'Review' : '1-on-1'}
                             </Button>
                         </Stack>
 
-                        {/* ─── Filters (for Reviews tab) ─────────────────────── */}
+                        {/* Filters (for Reviews tab) */}
                         {tab === 0 && (
                             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} mt={2} alignItems="center">
-                                <FormControl size="small">
+                                <FormControl size="small" sx={{ minWidth: 120 }}>
                                     <InputLabel>Status</InputLabel>
                                     <Select
                                         label="Status"
                                         value={statusFilter}
                                         onChange={e => setStatusFilter(e.target.value)}
-                                        sx={{ minWidth: 120 }}
+                                        sx={{
+                                            '& .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
+                                            '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
+                                        }}
                                     >
                                         {['All', 'Upcoming', 'Completed'].map(s => (
                                             <MenuItem key={s} value={s}>{s}</MenuItem>
@@ -287,6 +328,10 @@ export default function PerformanceReviewsPage() {
                                     slotProps={{ inputLabel: { shrink: true } }}
                                     value={dateRange.from}
                                     onChange={e => setDateRange(d => ({ ...d, from: e.target.value }))}
+                                    sx={{
+                                        '& .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
+                                        '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
+                                    }}
                                 />
                                 <TextField
                                     label="To"
@@ -295,13 +340,21 @@ export default function PerformanceReviewsPage() {
                                     slotProps={{ inputLabel: { shrink: true } }}
                                     value={dateRange.to}
                                     onChange={e => setDateRange(d => ({ ...d, to: e.target.value }))}
+                                    sx={{
+                                        '& .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
+                                        '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
+                                    }}
                                 />
                             </Stack>
                         )}
 
-                        {/* ─── Table ────────────────────────────────────────── */}
+                        {/* Table */}
                         <Box mt={2}>
-                            <Table>
+                            <Table
+                                sx={{
+                                    '& th, & td': { borderColor: 'var(--border)', color: 'var(--fg)' },
+                                }}
+                            >
                                 <TableHead>
                                     <TableRow>
                                         <TableCell>Employee</TableCell>
@@ -323,10 +376,10 @@ export default function PerformanceReviewsPage() {
                                                 : <TableCell>{item.notes}</TableCell>
                                             }
                                             <TableCell align="right">
-                                                <IconButton size="small" onClick={() => handleOpen(item)}>
+                                                <IconButton size="small" onClick={() => handleOpen(item)} sx={{ color: 'var(--fg)' }}>
                                                     <Edit fontSize="inherit" />
                                                 </IconButton>
-                                                <IconButton size="small" onClick={() => handleDelete(item.id)}>
+                                                <IconButton size="small" onClick={() => handleDelete(item.id)} sx={{ color: 'var(--fg)' }}>
                                                     <Delete fontSize="inherit" />
                                                 </IconButton>
                                             </TableCell>
@@ -339,25 +392,36 @@ export default function PerformanceReviewsPage() {
                 </div>
             </main>
 
-            {/* ─── Schedule / Edit Dialog ────────────────────────── */}
+            {/* Schedule / Edit Dialog */}
             <Dialog
                 open={dialogOpen}
                 onClose={() => setDialogOpen(false)}
                 fullWidth
                 maxWidth="sm"
+                PaperProps={{
+                    sx: {
+                        backgroundColor: 'var(--card)',
+                        color: 'var(--fg)',
+                        border: '1px solid var(--border)',
+                    },
+                }}
             >
-                <DialogTitle>
+                <DialogTitle sx={{ borderBottom: '1px solid var(--border)' }}>
                     {form.type === 'review'
                         ? form.id ? 'Edit Review' : 'Schedule Review'
                         : form.id ? 'Edit 1 on 1' : 'Schedule 1 on 1'}
                 </DialogTitle>
-                <DialogContent dividers>
+                <DialogContent dividers sx={{ borderColor: 'var(--border)' }}>
                     <FormControl fullWidth margin="normal" size="small">
                         <InputLabel>Employee</InputLabel>
                         <Select
                             label="Employee"
                             value={form.employee}
                             onChange={e => setForm(f => ({ ...f, employee: e.target.value }))}
+                            sx={{
+                                '& .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
+                                '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
+                            }}
                         >
                             {dummyEmployees.map(e => (
                                 <MenuItem key={e} value={e}>{e}</MenuItem>
@@ -374,9 +438,12 @@ export default function PerformanceReviewsPage() {
                         slotProps={{ inputLabel: { shrink: true } }}
                         value={form.date}
                         onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
+                        sx={{
+                            '& .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
+                            '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
+                        }}
                     />
 
-                    {/* extra fields for review */}
                     {form.type === 'review' && (
                         <>
                             <FormControl fullWidth margin="normal" size="small">
@@ -385,6 +452,10 @@ export default function PerformanceReviewsPage() {
                                     label="Status"
                                     value={form.status}
                                     onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+                                    sx={{
+                                        '& .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
+                                        '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
+                                    }}
                                 >
                                     {['Upcoming', 'Completed'].map(s => (
                                         <MenuItem key={s} value={s}>{s}</MenuItem>
@@ -401,6 +472,10 @@ export default function PerformanceReviewsPage() {
                                 size="small"
                                 value={form.selfAssessment}
                                 onChange={e => setForm(f => ({ ...f, selfAssessment: e.target.value }))}
+                                sx={{
+                                    '& .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
+                                    '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
+                                }}
                             />
 
                             <TextField
@@ -412,11 +487,14 @@ export default function PerformanceReviewsPage() {
                                 size="small"
                                 value={form.managerComments}
                                 onChange={e => setForm(f => ({ ...f, managerComments: e.target.value }))}
+                                sx={{
+                                    '& .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
+                                    '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
+                                }}
                             />
                         </>
                     )}
 
-                    {/* for 1on1 */}
                     {form.type === '1to1' && (
                         <TextField
                             margin="normal"
@@ -427,12 +505,25 @@ export default function PerformanceReviewsPage() {
                             size="small"
                             value={form.notes}
                             onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                            sx={{
+                                '& .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
+                                '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
+                            }}
                         />
                     )}
                 </DialogContent>
-                <DialogActions>
+                <DialogActions sx={{ borderTop: '1px solid var(--border)' }}>
                     <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
-                    <Button onClick={handleSave} variant="contained" color="primary">
+                    <Button
+                        onClick={handleSave}
+                        variant="contained"
+                        disableElevation
+                        sx={{
+                            bgcolor: 'var(--accent)',
+                            color: '#fff',
+                            '&:hover': { filter: 'brightness(0.95)', bgcolor: 'var(--accent)' },
+                        }}
+                    >
                         Save
                     </Button>
                 </DialogActions>

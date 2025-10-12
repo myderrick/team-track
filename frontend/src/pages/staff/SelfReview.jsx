@@ -58,9 +58,9 @@ function pct(value, target) {
 }
 function ProgressBar({ percent }) {
   return (
-    <div className="w-full h-2 rounded bg-gray-100 dark:bg-gray-700 overflow-hidden">
+    <div className="w-full h-2 rounded overflow-hidden tint">
       <div
-        className="h-2 bg-indigo-600 transition-all"
+        className="h-2 bg-[var(--accent)] transition-all"
         style={{ width: `${Math.max(0, Math.min(100, percent || 0))}%` }}
       />
     </div>
@@ -375,7 +375,7 @@ export default function SelfReview() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden text-gray-800 dark:text-gray-100">
+    <div className="flex h-screen overflow-hidden">
       <Sidebar />
       <div className="flex flex-col flex-1">
         <TopBar
@@ -385,16 +385,16 @@ export default function SelfReview() {
         />
 
         {/* Filters */}
-        <div className="flex items-center justify-between px-6 py-4 bg-white dark:bg-gray-800 sticky top-14 z-10 shadow ml-16 group-hover:ml-64">
+        <div className="toolbar flex items-center justify-between px-6 py-4 sticky top-14 z-10 shadow ml-16 group-hover:ml-64">
           <div>
             <h1 className="text-2xl font-bold">Self-Review</h1>
-            <p className="text-sm text-gray-500">Update progress and add your self-assessment</p>
+            <p className="text-sm muted">Update progress and add your self-assessment</p>
           </div>
           <div className="flex gap-3 items-center">
             <select
               value={quarter}
               onChange={e => setQuarter(e.target.value)}
-              className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600"
+              className="px-3 py-2 border rounded-lg bg-[var(--card)] border-[var(--border)]"
             >
               {quarterOptions.map(q => <option key={q}>{q}</option>)}
             </select>
@@ -403,7 +403,7 @@ export default function SelfReview() {
 
         <main className="flex-1 ml-16 mt-4 mr-4 mb-4 px-6 overflow-auto">
           {loading ? (
-            <div className="p-6 text-sm text-gray-500">Loading…</div>
+            <div className="p-6 text-sm muted">Loading…</div>
           ) : err ? (
             <div className="p-6"><EmptyState title="Unable to load" subtitle={err} /></div>
           ) : !me ? (
@@ -445,14 +445,14 @@ export default function SelfReview() {
                 <input
                   type="number"
                   step="any"
-                  className="w-full rounded-lg border p-2"
+                  className="w-full rounded-lg border p-2 bg-[var(--card)] border-[var(--border)]"
                   value={progressModal.value}
                   onChange={e => setProgressModal(s => ({ ...s, value: e.target.value }))}
                 />
               </label>
               <label className="block">
                 <div className="text-sm mb-1">Note (optional)</div>
-                <textarea className="w-full rounded-lg border p-2" rows={3}
+                <textarea className="w-full rounded-lg border p-2 bg-[var(--card)] border-[var(--border)]" rows={3}
                   value={progressModal.note}
                   onChange={e => setProgressModal(s => ({ ...s, note: e.target.value }))}
                 />
@@ -465,7 +465,7 @@ export default function SelfReview() {
               <label className="block">
                 <div className="text-sm mb-1">Currency</div>
                 <input
-                  className="w-full rounded-lg border p-2"
+                  className="w-full rounded-lg border p-2 bg-[var(--card)] border-[var(--border)]"
                   value={progressModal.currency}
                   onChange={e => setProgressModal(s => ({ ...s, currency: e.target.value }))}
                   placeholder="USD"
@@ -476,14 +476,14 @@ export default function SelfReview() {
                 <input
                   type="number"
                   step="0.01"
-                  className="w-full rounded-lg border p-2"
+                  className="w-full rounded-lg border p-2 bg-[var(--card)] border-[var(--border)]"
                   value={progressModal.value}
                   onChange={e => setProgressModal(s => ({ ...s, value: e.target.value }))}
                 />
               </label>
               <label className="block">
                 <div className="text-sm mb-1">Note (optional)</div>
-                <textarea className="w-full rounded-lg border p-2" rows={3}
+                <textarea className="w-full rounded-lg border p-2 bg-[var(--card)] border-[var(--border)]" rows={3}
                   value={progressModal.note}
                   onChange={e => setProgressModal(s => ({ ...s, note: e.target.value }))}
                 />
@@ -500,8 +500,8 @@ export default function SelfReview() {
                     key={s}
                     type="button"
                     onClick={() => setProgressModal(m => ({ ...m, qual_status: s }))}
-                    className={`px-3 py-1.5 rounded-full border text-sm ${
-                      progressModal.qual_status === s ? 'bg-indigo-600 text-white border-indigo-600' : ''
+                    className={`px-3 py-1.5 rounded-full border text-sm border-[var(--border)] ${
+                      progressModal.qual_status === s ? 'bg-[var(--accent)] text-white border-[var(--accent)]' : ''
                     }`}
                   >
                     {s.replace('_',' ')}
@@ -510,7 +510,7 @@ export default function SelfReview() {
               </div>
               <label className="block">
                 <div className="text-sm mb-1">Note (optional)</div>
-                <textarea className="w-full rounded-lg border p-2" rows={3}
+                <textarea className="w-full rounded-lg border p-2 bg-[var(--card)] border-[var(--border)]" rows={3}
                   value={progressModal.note}
                   onChange={e => setProgressModal(s => ({ ...s, note: e.target.value }))}
                 />
@@ -519,11 +519,11 @@ export default function SelfReview() {
           )}
 
           <div className="mt-4 flex items-center justify-end gap-2">
-            <button className="px-3 py-2 rounded-lg border" onClick={() => setProgressModal(null)}>
+            <button className="px-3 py-2 rounded-lg border border-[var(--border)]" onClick={() => setProgressModal(null)}>
               Cancel
             </button>
             <button
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white disabled:opacity-50"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--accent)] text-white disabled:opacity-50"
               onClick={saveProgress}
               disabled={saving}
             >
@@ -548,7 +548,7 @@ export default function SelfReview() {
             const currentTs  = lm.measured_at ?? lp.created_at ?? null;
             const unitOrCur  = g.type === 'monetary' ? (g.currency || lp.currency || '') : (g.unit || '');
             return (
-              <div className="mb-3 text-sm text-gray-600">
+              <div className="mb-3 text-sm muted">
                 Target: <b>{g.target_value}</b> {unitOrCur}
                 {' · '}
                 Current: <b>{currentVal}</b> {unitOrCur}
@@ -560,7 +560,7 @@ export default function SelfReview() {
           <label className="block mb-3">
             <div className="text-sm mb-1">Your review</div>
             <textarea
-              className="w-full rounded-lg border p-2"
+              className="w-full rounded-lg border p-2 bg-[var(--card)] border-[var(--border)]"
               rows={5}
               value={reviewModal.review}
               onChange={(e)=>setReviewModal(s => ({ ...s, review: e.target.value }))}
@@ -573,7 +573,7 @@ export default function SelfReview() {
               <div className="text-sm mb-1">Rating (1–5)</div>
               <input
                 type="number" min={1} max={5}
-                className="w-full rounded-lg border p-2"
+                className="w-full rounded-lg border p-2 bg-[var(--card)] border-[var(--border)]"
                 value={reviewModal.rating}
                 onChange={(e)=>setReviewModal(s => ({ ...s, rating: Number(e.target.value) }))}
               />
@@ -581,7 +581,7 @@ export default function SelfReview() {
             <label className="block">
               <div className="text-sm mb-1">Status</div>
               <select
-                className="w-full rounded-lg border p-2 bg-white"
+                className="w-full rounded-lg border p-2 bg-[var(--card)] border-[var(--border)]"
                 value={reviewModal.status}
                 onChange={(e)=>setReviewModal(s => ({ ...s, status: e.target.value }))}
               >
@@ -592,9 +592,9 @@ export default function SelfReview() {
           </div>
 
           <div className="mt-4 flex items-center justify-end gap-2">
-            <button className="px-3 py-2 rounded-lg border" onClick={() => setReviewModal(null)}>Cancel</button>
+            <button className="px-3 py-2 rounded-lg border border-[var(--border)]" onClick={() => setReviewModal(null)}>Cancel</button>
             <button
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white disabled:opacity-50"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--accent)] text-white disabled:opacity-50"
               onClick={saveReview}
               disabled={saving}
             >
@@ -611,11 +611,11 @@ export default function SelfReview() {
 /* ---------- sections & cards ---------- */
 function GoalSection({ title, subtitle, empty, items, onAddProgress, onWriteReview }) {
   return (
-    <section className="bg-white dark:bg-gray-800 rounded-xl shadow p-5 mb-6">
+    <section className="card p-5 mb-6">
       <div className="flex items-center justify-between mb-3">
         <div>
           <div className="text-lg font-semibold">{title}</div>
-          {subtitle && <div className="text-xs text-gray-500">{subtitle}</div>}
+          {subtitle && <div className="text-xs muted">{subtitle}</div>}
         </div>
       </div>
       {items.length === 0 ? (
@@ -652,22 +652,22 @@ function GoalCard({ goal, onAddProgress, onWriteReview }) {
   const qualStatus = qualStatusRaw ? qualStatusRaw.replace('_', ' ') : 'not started';
 
   return (
-    <div className="rounded-xl border p-4">
+    <div className="card p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="font-medium">{goal.title}</div>
-          {goal.description && <div className="text-xs text-gray-500">{goal.description}</div>}
+          {goal.description && <div className="text-xs muted">{goal.description}</div>}
         </div>
         <div className="flex gap-2">
-          <button onClick={onAddProgress} className="px-3 py-1.5 rounded-lg border text-sm">Add progress</button>
-          <button onClick={onWriteReview} className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm">Write review</button>
+          <button onClick={onAddProgress} className="px-3 py-1.5 rounded-lg border text-sm border-[var(--border)]">Add progress</button>
+          <button onClick={onWriteReview} className="px-3 py-1.5 rounded-lg bg-[var(--accent)] text-white text-sm">Write review</button>
         </div>
       </div>
 
       <div className="mt-3 grid sm:grid-cols-2 gap-3 text-sm">
         {/* Target + Current together */}
-        <div className="rounded-lg border p-3">
-          <div className="flex items-center gap-2 text-gray-600">
+        <div className="rounded-lg border p-3 border-[var(--border)]">
+          <div className="flex items-center gap-2 muted">
             {goal.type === 'monetary' ? <DollarSign className="w-4 h-4" /> : <Target className="w-4 h-4" />}
             <span>Target</span>
           </div>
@@ -682,7 +682,7 @@ function GoalCard({ goal, onAddProgress, onWriteReview }) {
           </div>
 
           {/* Current */}
-          <div className="mt-3 text-xs text-gray-600">Current</div>
+          <div className="mt-3 text-xs muted">Current</div>
           <div className="font-medium">
             {isQual ? (
               qualStatus
@@ -696,28 +696,28 @@ function GoalCard({ goal, onAddProgress, onWriteReview }) {
 
           {/* For qualitative, also show the latest note right here */}
           {isQual && lp.note && (
-            <div className="mt-1 text-xs text-gray-500">{lp.note}</div>
+            <div className="mt-1 text-xs muted">{lp.note}</div>
           )}
 
           {/* Progress bar (quantitative only) */}
           {isQuant && goal.target_value ? (
             <div className="mt-2">
               <ProgressBar percent={p ?? 0} />
-              <div className="mt-1 text-xs text-gray-500">{p ?? 0}%</div>
+              <div className="mt-1 text-xs muted">{p ?? 0}%</div>
             </div>
           ) : null}
         </div>
 
         {/* Last update */}
-        <div className="rounded-lg border p-3">
-          <div className="flex items-center gap-2 text-gray-600">
+        <div className="rounded-lg border p-3 border-[var(--border)]">
+          <div className="flex items-center gap-2 muted">
             <Flag className="w-4 h-4" />
             <span>Last update</span>
           </div>
           <div className="mt-1 text-sm">{currentTs ? new Date(currentTs).toLocaleString() : '—'}</div>
           {/* Avoid duplicate note: only show here if not qualitative (where we already show it) */}
           {!isQual && (lm.note || lp.note) && (
-            <div className="mt-1 text-xs text-gray-500 line-clamp-2">{lm.note || lp.note}</div>
+            <div className="mt-1 text-xs muted line-clamp-2">{lm.note || lp.note}</div>
           )}
         </div>
       </div>
@@ -730,10 +730,10 @@ function GoalCard({ goal, onAddProgress, onWriteReview }) {
 function Modal({ title, onClose, children }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="w-full max-w-lg bg-white dark:bg-gray-900 rounded-xl shadow-lg p-5">
+      <div className="w-full max-w-lg card p-5">
         <div className="flex items-center justify-between mb-3">
           <div className="text-lg font-semibold">{title}</div>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} className="muted hover:opacity-80"><X className="w-5 h-5" /></button>
         </div>
         {children}
       </div>

@@ -50,10 +50,7 @@ const fmtMeasure = (n, unit, currency_code) => {
 export default function StaffDashboard() {
   const { orgId } = useOrg();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [darkMode, setDarkMode] = useState(() => {
-    const saved = localStorage.getItem('darkMode');
-    return saved !== null ? saved === 'true' : window.matchMedia('(prefers-color-scheme: dark)').matches;
-  });
+
 
   const quarterOptions = useMemo(() => buildQuarterOptions({ years: 4 }), []);
   const [quarter, setQuarter] = useState(currentQuarterLabel());
@@ -70,10 +67,6 @@ export default function StaffDashboard() {
   const [latest, setLatest] = useState({});
   const [feedback, setFeedback] = useState([]);
 
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', darkMode);
-    localStorage.setItem('darkMode', String(darkMode));
-  }, [darkMode]);
 
   useEffect(() => {
     let cancel = false;
@@ -162,42 +155,50 @@ setGoals(normalizedGoals);
     return c;
   }, [rows]);
 
-  function StatusPill({ status }) {
-    const map = {
-      'On track': 'bg-green-50 text-green-700',
-      'At risk': 'bg-amber-50 text-amber-800',
-      'Behind': 'bg-yellow-50 text-yellow-800',
-      'Overdue': 'bg-red-50 text-red-700',
-      'In progress': 'bg-blue-50 text-blue-700',
-    };
-    return <span className={`px-2 py-1 rounded-full text-xs font-medium ${map[status] || 'bg-gray-100'}`}>{status}</span>;
-  }
+ function StatusPill({ status }) {
+  const map = {
+    'On track':     'text-emerald-700 bg-emerald-50 ring-1 ring-inset ring-emerald-200 dark:text-emerald-300 dark:bg-emerald-900/30 dark:ring-emerald-800/80',
+    'At risk':      'text-amber-800  bg-amber-50  ring-1 ring-inset ring-amber-200  dark:text-amber-300  dark:bg-amber-900/30  dark:ring-amber-800/80',
+    'Behind':       'text-yellow-800 bg-yellow-50 ring-1 ring-inset ring-yellow-200 dark:text-yellow-300 dark:bg-yellow-900/30 dark:ring-yellow-800/80',
+    'Overdue':      'text-red-700    bg-red-50    ring-1 ring-inset ring-red-200    dark:text-red-300    dark:bg-red-900/30    dark:ring-red-800/80',
+    'In progress':  'text-blue-700   bg-blue-50   ring-1 ring-inset ring-blue-200   dark:text-blue-300   dark:bg-blue-900/30   dark:ring-blue-800/80',
+  };
+  return (
+    <span className={`px-2 py-1 rounded-full text-xs font-medium ${map[status] || 'text-gray-700 bg-gray-100 ring-1 ring-inset ring-gray-200 dark:text-gray-300 dark:bg-gray-800 dark:ring-gray-700'}`}>
+      {status}
+    </span>
+  );
+}
+
 
   function logProgress(goal) {
     setModalGoal(goal);
   }
 
   return (
-    <div className="flex h-screen overflow-hidden text-gray-800 dark:text-gray-100">
+    <div className="flex h-screen overflow-hidden">
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex flex-col flex-1">
         <TopBar
           onMenuClick={() => setSidebarOpen(o => !o)}
-          darkMode={darkMode}
-          onToggleDark={() => setDarkMode(m => !m)}
+          onToggleDark={() => {
+            const el = document.documentElement;
+            const isDark = el.classList.toggle('dark');
+            try { localStorage.setItem('theme', isDark ? 'dark' : 'light'); } catch {}
+          }}
         />
 
         {/* Filters */}
-        <div className="flex items-center justify-between px-6 py-4 bg-white dark:bg-gray-800 sticky top-14 z-10 shadow ml-16 group-hover:ml-64">
+        <div className="toolbar flex items-center justify-between px-6 py-4 sticky top-14 z-10 shadow ml-16 group-hover:ml-64">
           <div>
             <h1 className="text-2xl font-bold">My Dashboard</h1>
-            <p className="text-sm text-gray-500">Personal performance overview</p>
+            <p className="text-sm muted">Personal performance overview</p>
           </div>
           <div className="flex gap-3 items-center">
             <select
               value={quarter}
               onChange={e => setQuarter(e.target.value)}
-              className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600"
+              className="px-3 py-2 border rounded-lg bg-[var(--card)] border-[var(--border)]"
             >
               {quarterOptions.map(q => <option key={q}>{q}</option>)}
             </select>
@@ -219,7 +220,7 @@ setGoals(normalizedGoals);
 
         <main className="flex-1 ml-16 mt-4 mr-4 mb-4 px-6 overflow-auto">
           {loading ? (
-            <div className="p-6 text-sm text-gray-500">Loading…</div>
+            <div className="p-6 text-sm text-[var(--fg-muted)]">Loading…</div>
           ) : err ? (
             <div className="p-6"><EmptyState title="Unable to load" subtitle={err} /></div>
           ) : !me ? (
@@ -228,51 +229,63 @@ setGoals(normalizedGoals);
             <>
               {/* Profile strip */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-5">
+                <div className="card p-5">
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="text-lg font-semibold">{me.full_name}</div>
-                      <div className="text-sm text-gray-500">{me.title} • {me.department || '—'}</div>
+                      <div className="text-sm muted">{me.title} • {me.department || '—'}</div>
                     </div>
                     <CheckCircle2 className="w-6 h-6 text-emerald-500" />
                   </div>
                   {manager && (
                     <div className="mt-4 text-sm">
                       <div className="font-medium">Manager</div>
-                      <div className="text-gray-600">{manager.full_name}{manager.title ? ` • ${manager.title}` : ''}</div>
+                      <div className="muted">{manager.full_name}{manager.title ? ` • ${manager.title}` : ''}</div>
                     </div>
                   )}
                 </div>
 
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-5">
+                <div className="card p-5">
                   <div className="flex items-center gap-2 mb-3">
                     <TrendingUp className="w-5 h-5" />
                     <div className="font-semibold">Goal health</div>
                   </div>
                   <div className="grid grid-cols-4 gap-2 text-center text-sm">
-                    <div><div className="font-bold">{counts.on}</div><div className="text-green-700">On track</div></div>
-                    <div><div className="font-bold">{counts.risk}</div><div className="text-amber-700">At risk</div></div>
-                    <div><div className="font-bold">{counts.behind}</div><div className="text-yellow-700">Behind</div></div>
-                    <div><div className="font-bold">{counts.overdue}</div><div className="text-red-700">Overdue</div></div>
+                    <div>
+                      <div className="font-bold">{counts.on}</div>
+                      <div className="text-green-700 dark:text-green-400">On track</div>
+                    </div>
+                    <div>
+                      <div className="font-bold">{counts.risk}</div>
+                      <div className="text-amber-700 dark:text-amber-400">At risk</div>
+                    </div>
+                    <div>
+                      <div className="font-bold">{counts.behind}</div>
+                      <div className="text-yellow-700 dark:text-yellow-400">Behind</div>
+                    </div>
+                    <div>
+                      <div className="font-bold">{counts.overdue}</div>
+                      <div className="text-red-700 dark:text-red-400">Overdue</div>
+                    </div>
                   </div>
                 </div>
 
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-5">
+                <div className="card p-5">
                   <div className="flex items-center gap-2 mb-3">
                     <Clock className="w-5 h-5" />
                     <div className="font-semibold">My team</div>
                   </div>
                   {peers.length === 0
-                    ? <div className="text-sm text-gray-500">No peers listed.</div>
+                    ? <div className="text-sm muted">No peers listed.</div>
                     : <ul className="text-sm space-y-1">{peers.map(p => <li key={p.id}>{p.full_name} • {p.title || '—'}</li>)}</ul>}
                 </div>
               </div>
 
-              {/* Goals table */}
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-5 mb-6">
+               {/* Goals table & stats  */}
+              <div className="card mb-6 rounded-xl shadow p-5">
                 <div className="flex items-center justify-between mb-3">
                   <div className="text-lg font-semibold">My goals</div>
-                  <a href="/staff/self-review" className="text-sm font-medium text-indigo-600 hover:underline">Start self-review →</a>
+                  <a href="/staff/self-review" className="text-sm font-medium text-[var(--accent)] hover:underline">Start self-review →</a>
                 </div>
 
                 {rows.length === 0 ? (
@@ -280,22 +293,23 @@ setGoals(normalizedGoals);
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="min-w-full text-sm">
-                      <thead className="text-left text-gray-500">
+                      <thead className="text-left text-[var(--fg-muted)] bg-[var(--surface)]">
                         <tr>
-                          <th className="py-2 pr-3">Goal</th>
-                          <th className="py-2 pr-3">Current</th>
-                          <th className="py-2 pr-3">Target</th>
-                          <th className="py-2 pr-3">Deadline</th>
-                          <th className="py-2 pr-3">Status</th>
-                          <th className="py-2 pr-3 text-right">Actions</th>
+                          <th className="py-2 pr-3 border-b border-[var(--border)] p-1 rounded-tl-xl">Goal</th>
+                          <th className="py-2 pr-3 border-b border-[var(--border)]">Current</th>
+                          <th className="py-2 pr-3 border-b border-[var(--border)]">Target</th>
+                          <th className="py-2 pr-3 border-b border-[var(--border)]">Deadline</th>
+                          <th className="py-2 pr-3 border-b border-[var(--border)]">Status</th>
+                          <th className="py-2 pr-3 text-right border-b border-[var(--border)] rounded-tr-xl">Actions</th>
                         </tr>
                       </thead>
+
                       <tbody>
                         {rows.map(g => (
-                          <tr key={g.id} className="border-t border-gray-200/60">
-                            <td className="py-3 pr-3">
+                          <tr key={g.id} className="border-t border-[var(--border)] hover:bg-[var(--surface)] transition-colors">
+                            <td className="py-3 pr-3 pl-1 max-w-sm">
                               <div className="font-medium">{g.title}</div>
-                              {g.description && <div className="text-xs text-gray-500 line-clamp-1">{g.description}</div>}
+                              {g.description && <div className="text-xs text-[var(--fg-muted)] line-clamp-1">{g.description}</div>}
                             </td>
                             <td className="py-3 pr-3">{g.measure_type === 'qualitative' ? '—' : fmtMeasure(g.current, g.unit, g.currency_code)}</td>
                             <td className="py-3 pr-3">{g.measure_type === 'qualitative' ? '—' : fmtMeasure(g.target, g.unit, g.currency_code)}</td>
@@ -305,12 +319,12 @@ setGoals(normalizedGoals);
                               {g.measure_type !== 'qualitative' ? (
                                 <button
                                   onClick={() => logProgress(g)}
-                                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[var(--accent)] text-white hover:bg-indigo-700"
                                 >
                                   <Plus className="w-4 h-4" /> Update
                                 </button>
                               ) : (
-                                <span className="text-xs text-gray-500">—</span>
+                                <span className="text-xs text-[var(--fg-muted)]">—</span>
                               )}
                             </td>
                           </tr>
@@ -320,10 +334,8 @@ setGoals(normalizedGoals);
                   </div>
                 )}
               </div>
-
-              {/* Misses & Feedback */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-5">
+                <div className="card p-5">
                   <div className="flex items-center gap-2 mb-3">
                     <AlertTriangle className="w-5 h-5 text-amber-600" />
                     <div className="text-lg font-semibold">Due soon & overdue</div>
@@ -341,21 +353,21 @@ setGoals(normalizedGoals);
                       ))
                     }
                     {rows.filter(r => ['At risk','Overdue','Behind'].includes(r.status)).length === 0 &&
-                      <li className="text-gray-500">Nothing urgent 🎉</li>}
+                      <li className="text-[var(--fg-muted)]">Nothing urgent 🎉</li>}
                   </ul>
                 </div>
 
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-5">
+                <div className="card p-5">
                   <div className="text-lg font-semibold mb-3">Recent feedback</div>
                   {feedback.length === 0 ? (
-                    <div className="text-sm text-gray-500">No feedback yet.</div>
+                    <div className="text-sm text-[var(--fg-muted)]">No feedback yet.</div>
                   ) : (
                     <ul className="text-sm space-y-3">
                       {feedback.map(f => (
-                        <li key={f.id} className="border rounded-lg p-3 border-gray-200 dark:border-gray-700">
+                        <li key={f.id} className="border rounded-lg p-3 border-[var(--border)]">
                           <div className="flex items-center justify-between">
                             <div className="font-medium">{f.author_name || 'Manager'}</div>
-                            <div className="text-xs text-gray-500">{format(parseISO(f.created_at), 'd MMM')}</div>
+                            <div className="text-xs text-[var(--fg-muted)]">{format(parseISO(f.created_at), 'd MMM')}</div>
                           </div>
                           <div className="mt-1">{f.note}</div>
                         </li>

@@ -5,6 +5,7 @@
 @layer base {
   :root { 
     /* light */
+    font-family: 'inter', system-ui, Avenir, Helvetica, Arial, sans-serif !important;
     --bg:        #e8f0f9;        /* page background */
     --surface:   #f1f5f9;        /* bars/toolbars */
     --card:      #ffffff;        /* cards/panels */
@@ -30,10 +31,16 @@
 
   html { font-size: 90%; }
   body {
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: 'Inter', system-ui, sans-serif !important;
     background-color: var(--bg);
     color: var(--fg);
     font-size: 80%;
+  }
+
+  .MuiCardContent-root, .MuiPaper-root, .MuiPopover-paper, .MuiTable-root, .MuiTypography-root, .MuiChip-root, .MuiInputBase-root{
+    
+    font-family: 'Inter', system-ui, sans-serif !important;
+    
   }
 }
 

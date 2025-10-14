@@ -1,11 +1,10 @@
-// frontend/src/pages/GoalsPage.jsx (aka GoalsKpiTracker page)
+// frontend/src/pages/GoalsPage.jsx
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box, Card, CardContent, TextField, Button, Typography, Autocomplete,
   Select, MenuItem, InputLabel, FormControl, Chip, InputAdornment, IconButton,
   Tooltip, Table, TableHead, TableRow, TableCell, TableBody, Divider, CssBaseline
 } from '@mui/material';
-import Grid from '@mui/material/Grid';
 import { ThemeProvider, createTheme, alpha } from '@mui/material/styles';
 
 import { CalendarToday, Edit, Delete } from '@mui/icons-material';
@@ -57,6 +56,8 @@ function normalizeGoalRow(r) {
     department: r.department || null,
     description: r.description || r.notes || '',
     measure_type: r.measure_type || 'numeric',
+     org_goal_id: r.org_goal_id ?? r.goal_org_goal_id ?? null,               // NEW
+    alignment_label: meta.alignment_label || r.alignment_label || null,     // NEW
   };
 }
 const currencySymbol = (code) =>
@@ -288,7 +289,32 @@ async function createAlignmentAndSelect(label) {
     const eRes = await supabase.schema('public').rpc('org_employees', { p_org_id: orgId });
 
     const p_quarter = quarter === 'All' ? null : quarter;
-    let gRes = await supabase.schema('public').rpc('org_goals_catalog_v2', { p_org_id: orgId, p_quarter });
+// --- choose the right RPC based on quarter ---
+let gRes;
+if (quarter === 'All') {
+  // v1 accepts NULL / “all quarters”
+  gRes = await supabase
+    .schema('public')
+    .rpc('org_goals_catalog', { p_org_id: orgId, p_quarter: null });
+} else {
+  // v2 requires a concrete quarter label like "Q2 2025"
+  gRes = await supabase
+    .schema('public')
+    .rpc('org_goals_catalog_v2', { p_org_id: orgId, p_quarter: quarter });
+}
+
+// optional safety net (should rarely run now)
+if (gRes.error) {
+  console.warn('v2/v1 RPC failed; falling back:', gRes.error);
+  const v1 = await supabase
+    .schema('public')
+    .rpc('org_goals_catalog', { p_org_id: orgId, p_quarter: quarter === 'All' ? null : quarter });
+  gRes = v1.error
+    ? v1
+    : { data: (v1.data || []).map(row => ({ ...row, currency_code: row.currency_code || 'USD' })), error: null };
+}
+
+
 
     if (gRes.error) {
       const v1 = await supabase.schema('public').rpc('org_goals_catalog', { p_org_id: orgId, p_quarter });
@@ -375,7 +401,8 @@ async function createAlignmentAndSelect(label) {
     if (!q) return rows || [];
     return (rows || []).filter(g => {
       const hay = [
-        g.title, g.description, g.department, g.measure_type, g.unit,
+        g.title, g.description, g.department, g.measure_type, g.unit,      g.alignment_label,                               // NEW
+
         ...(g.assignees?.map(a => a.name) || []),
       ].filter(Boolean).join(' ').toLowerCase();
       return hay.includes(q);
@@ -839,6 +866,7 @@ const alignment_label = form.alignmentObj?.label || 'None';
                         <TableRow>
                           <TableCell>Goal</TableCell>
                           <TableCell>Measure</TableCell>
+                          <TableCell>Alignment</TableCell>
                           <TableCell>Quarter</TableCell>
                           <TableCell>Deadline</TableCell>
                           <TableCell>Department</TableCell>
@@ -846,54 +874,67 @@ const alignment_label = form.alignmentObj?.label || 'None';
                         </TableRow>
                       </TableHead>
 
-                      <TableBody>
-                        {filteredRows.map(g => (
-                          <TableRow key={g.id} hover sx={{ '&:hover': { backgroundColor: 'color-mix(in oklab, var(--surface) 85%, transparent)' } }}>
-                            <TableCell sx={{ maxWidth: 420 }}>
-                              <Typography fontWeight={600}>{g.title}</Typography>
-                              {g.description && (
-                                <Typography variant="body2" color="text.secondary" noWrap>
-                                  {g.description}
-                                </Typography>
-                              )}
-                              {(g.assignees && g.assignees.length > 0) && (
-                                <Box mt={1} sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                                  {g.assignees.slice(0, 4).map(a => (
-                                    <Chip key={a.id} label={a.name} size="small" />
-                                  ))}
-                                  {g.assignees.length > 4 && (
-                                    <Chip label={`+${g.assignees.length - 4} more`} size="small" variant="outlined" />
-                                  )}
-                                </Box>
-                              )}
-                            </TableCell>
+                     <TableBody>
+  {filteredRows.map(g => (
+    <TableRow
+      key={g.id}
+      hover
+      sx={{ '&:hover': { backgroundColor: 'color-mix(in oklab, var(--surface) 85%, transparent)' } }}
+    >
+      <TableCell sx={{ maxWidth: 420 }}>
+        <Typography fontWeight={600}>{g.title}</Typography>
+        {g.description && (
+          <Typography variant="body2" color="text.secondary" noWrap>
+            {g.description}
+          </Typography>
+        )}
+        {(g.assignees && g.assignees.length > 0) && (
+          <Box mt={1} sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+            {g.assignees.slice(0, 4).map(a => (
+              <Chip key={a.id} label={a.name} size="small" />
+            ))}
+            {g.assignees.length > 4 && (
+              <Chip label={`+${g.assignees.length - 4} more`} size="small" variant="outlined" />
+            )}
+          </Box>
+        )}
+      </TableCell>
 
-                            <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                              {g.measure_type === 'monetary'
-                                ? fmtMoney(g.target ?? 0, g.currency_code)
-                                : g.measure_type === 'numeric'
-                                  ? `${Number(g.target ?? 0).toLocaleString()} ${g.unit || ''}`
-                                  : 'Qualitative'}
-                            </TableCell>
+      <TableCell sx={{ whiteSpace: 'nowrap' }}>
+        {g.measure_type === 'monetary'
+          ? fmtMoney(g.target ?? 0, g.currency_code)
+          : g.measure_type === 'numeric'
+            ? `${Number(g.target ?? 0).toLocaleString()} ${g.unit || ''}`
+            : 'Qualitative'}
+      </TableCell>
 
-                            <TableCell>{g.quarter || '—'}</TableCell>
-                            <TableCell>{displayDeadline(g)}</TableCell>
-                            <TableCell>{g.department || '—'}</TableCell>
-                            <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                              <Tooltip title="Edit Goal">
-                                <IconButton color="primary" size="small" onClick={() => handleEdit(g)}>
-                                  <Edit />
-                                </IconButton>
-                              </Tooltip>
-                              <Tooltip title="Delete Goal">
-                                <IconButton color="error" size="small" onClick={() => handleDelete(g.id)}>
-                                  <Delete />
-                                </IconButton>
-                              </Tooltip>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
+      {/* NEW: Alignment cell */}
+      <TableCell sx={{ maxWidth: 220 }}>
+        {g.alignment_label
+          ? <Chip size="small" variant="outlined" label={g.alignment_label} />
+          : <span>—</span>}
+      </TableCell>
+
+      <TableCell>{g.quarter || '—'}</TableCell>
+      <TableCell>{displayDeadline(g)}</TableCell>
+      <TableCell>{g.department || '—'}</TableCell>
+
+      <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+        <Tooltip title="Edit Goal">
+          <IconButton color="primary" size="small" onClick={() => handleEdit(g)}>
+            <Edit />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Delete Goal">
+          <IconButton color="error" size="small" onClick={() => handleDelete(g.id)}>
+            <Delete />
+          </IconButton>
+        </Tooltip>
+      </TableCell>
+    </TableRow>
+  ))}
+</TableBody>
+
                     </Table>
                   )}
 

@@ -1,4 +1,3 @@
-// src/components/GoalsFilterBar.jsx
 import React from 'react';
 import {
   CalendarDays, Building2, User, Target, Timer, Filter,
@@ -67,11 +66,14 @@ export default function GoalsFilterBar({
   title = 'Goals & KPIs',
   subtitle,
 
-  // selects
+  // existing selects
   quarter, setQuarter, quarterOptions = [],
   department, setDepartment, departmentOptions = [],
   teamFilter, setTeamFilter, teamOptions = [],
   goalType, setGoalType, goalTypeOptions = [],
+
+  // NEW: Org Goal (alignment)
+  orgGoal, setOrgGoal, orgGoalOptions = [],
 
   // time
   timeline, setTimeline, datePresets = [],
@@ -84,9 +86,7 @@ export default function GoalsFilterBar({
     <div className={WRAP} role="region" aria-label="Goals and KPI filters">
       <div className="min-w-0">
         <h1 className="text-xl font-semibold truncate">{title}</h1>
-        {subtitle && (
-          <p className="text-xs text-[var(--fg-muted)] truncate">{subtitle}</p>
-        )}
+        {subtitle && <p className="text-xs text-[var(--fg-muted)] truncate">{subtitle}</p>}
       </div>
 
       <div className="flex items-center gap-3 mt-3 md:mt-0">
@@ -100,15 +100,21 @@ export default function GoalsFilterBar({
           {departmentOptions.map(dep => <option key={dep} value={dep}>{dep}</option>)}
         </LabeledSelect>
 
-        {/* Employee */}
+        {/* Person */}
         <LabeledSelect icon={User} label="Person" value={teamFilter} onChange={e => setTeamFilter(e.target.value)}>
           {teamOptions.map(n => <option key={n} value={n}>{n}</option>)}
         </LabeledSelect>
 
-        {/* Goal type */}
-        <LabeledSelect icon={Target} label="Goal" value={goalType} onChange={e => setGoalType(e.target.value)}>
+        {/* Goal Title */}
+        {/* <LabeledSelect icon={Target} label="Goal Title" value={goalType} onChange={e => setGoalType(e.target.value)}>
           {goalTypeOptions.map(t => <option key={t} value={t}>{t}</option>)}
-        </LabeledSelect>
+        </LabeledSelect> */}
+
+        {/* NEW: Org Goal (alignment) */}
+        <LabeledSelect icon={Target} label="Org Goal" value={orgGoal} onChange={e => setOrgGoal(e.target.value)}>
+  {orgGoalOptions.map((opt, i) => <option key={`${opt}-${i}`} value={opt}>{opt}</option>)}
+</LabeledSelect>
+
 
         {/* Timeline */}
         <LabeledSelect icon={Timer} label="Timeline" value={timeline} onChange={e => setTimeline(e.target.value)}>
@@ -147,10 +153,7 @@ export default function GoalsFilterBar({
         <Segmented
           value={aggMode}
           onChange={setAggMode}
-          options={[
-            { value: 'avg', label: 'Avg' },
-            { value: 'latest', label: 'Latest' },
-          ]}
+          options={[{ value: 'avg', label: 'Avg' }, { value: 'latest', label: 'Latest' }]}
         />
       </div>
     </div>

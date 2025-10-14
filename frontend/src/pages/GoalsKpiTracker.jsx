@@ -84,6 +84,31 @@ function computeCurrent(rows = [], mode = 'avg') {
 }
 function takeLastN(series = [], n = 3) { return series.slice(Math.max(0, series.length - n)); }
 
+function groupByOrgGoal(goals = [], rows = [], mode = 'avg') {
+  const byId = new Map(goals.map(g => [g.id, g]));
+  const byGroup = new Map(); // key: alignment_label or 'Unaligned'/'Org Goal'
+  for (const r of rows) {
+    const g = byId.get(r.goal_id);
+    if (!g) continue;
+    const key = g.alignment_label || (g.org_goal_id ? 'Org Goal' : 'Unaligned');
+    if (!byGroup.has(key)) byGroup.set(key, []);
+    byGroup.get(key).push(r);
+  }
+  // summarize each group: current (avg/latest), target (sum of targets)
+  const out = [];
+  for (const [key, rs] of byGroup.entries()) {
+    const goalIds = new Set(rs.map(r => r.goal_id));
+    const groupedByGoal = [...goalIds].map(id => ({ id, rows: rs.filter(x => x.goal_id === id) }));
+    const current = groupedByGoal.reduce((sum, g) => sum + computeCurrent(g.rows, mode), 0);
+    const target = [...goalIds].reduce((sum, id) => sum + Number(byId.get(id)?.target || 0), 0);
+    const pct = target > 0 ? Math.round(Math.min(100, (current / target) * 100)) : 0;
+    out.push({ label: key, pct, current, target, count: goalIds.size });
+  }
+  return out.sort((a,b) => b.pct - a.pct);
+}
+
+
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Mini / Cards (tokenized)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -213,6 +238,11 @@ function normalizeGoal(g) {
   const meta = safeJson(g.meta);
   const rawUnit = g.unit ?? g.measure_unit ?? g.unit_label ?? '';
   const unit = /^\d+(\.\d+)?$/.test(String(rawUnit || '')) ? '' : rawUnit;
+
+  const ORG_GOAL_UNALIGNED = 'Unaligned';
+  const normalizedAlignment =
+    (g.org_goal_label ?? meta.alignment_label ?? (g.org_goal_id ? 'Org Goal' : ORG_GOAL_UNALIGNED)) || ORG_GOAL_UNALIGNED;
+
   return {
     ...g,
     title: g.title ?? g.label ?? '',
@@ -224,8 +254,11 @@ function normalizeGoal(g) {
     category: (g.category ?? g.goal_category ?? meta.category ?? null)?.toLowerCase() || null,
     visibility: g.visibility ?? 'org',
     self_selected: meta.self_selected === true,
+    org_goal_id: g.org_goal_id ?? g.goal_org_goal_id ?? null,
+    alignment_label: String(normalizedAlignment).trim() || ORG_GOAL_UNALIGNED,
   };
 }
+
 
 export default function GoalsKpiTracker() {
   const { orgId } = useOrg();
@@ -237,6 +270,7 @@ export default function GoalsKpiTracker() {
   const [department, setDepartment] = useState('All Departments');
   const [teamFilter, setTeamFilter] = useState('All');
   const [goalType, setGoalType] = useState('All Goals');
+  const [orgGoal, setOrgGoal] = useState('All Org Goals');   // NEW
   const [timeline, setTimeline] = useState('30D');
   const [customRange, setCustomRange] = useState({
     start: format(startOfMonth(new Date()), 'yyyy-MM-dd'),
@@ -253,18 +287,23 @@ export default function GoalsKpiTracker() {
   const [err, setErr] = useState('');
 
   useSearchParamsState(
-    {
-      q: quarter, dep: department, who: teamFilter, goal: goalType,
-      tl: timeline, start: customRange.start, end: customRange.end, agg: aggMode,
-    },
-    {
-      q: setQuarter, dep: setDepartment, who: setTeamFilter, goal: setGoalType,
-      tl: setTimeline,
-      start: (v) => setCustomRange(r => ({ ...r, start: v })),
-      end:   (v) => setCustomRange(r => ({ ...r, end: v })),
-      agg: setAggMode,
-    }
-  );
+  {
+    q: quarter, dep: department, who: teamFilter, goal: goalType,
+    // NEW:
+    og: orgGoal,
+    tl: timeline, start: customRange.start, end: customRange.end, agg: aggMode,
+  },
+  {
+    q: setQuarter, dep: setDepartment, who: setTeamFilter, goal: setGoalType,
+    // NEW:
+    og: setOrgGoal,
+    tl: setTimeline,
+    start: (v) => setCustomRange(r => ({ ...r, start: v })),
+    end:   (v) => setCustomRange(r => ({ ...r, end: v })),
+    agg: setAggMode,
+  }
+);
+
 
   const selectedEmployeeId = useMemo(() => {
     if (teamFilter === 'All') return null;
@@ -317,39 +356,44 @@ export default function GoalsKpiTracker() {
   }, [orgId, quarter, selectedEmployeeId]);
 
   // Load measurements + summary
-  useEffect(() => {
-    let cancel = false;
-    (async () => {
-      if (!orgId) return;
-      const now = new Date();
-      let start, end = endOfToday();
-      switch (timeline) {
-        case 'MTD': start = startOfMonth(now); break;
-        case 'QTD': start = startOfQuarter(now); break;
-        case '7D': start = addDays(now, -7); break;
-        case '30D': start = addDays(now, -30); break;
-        case '90D': start = addDays(now, -90); break;
-        case 'CUSTOM': start = new Date(customRange.start); end = new Date(customRange.end); break;
-        default: start = addDays(now, -30);
-      }
-      const startStr = format(start, 'yyyy-MM-dd');
-      const endStr = format(end, 'yyyy-MM-dd');
+useEffect(() => {
+  let cancel = false;
+  (async () => {
+    if (!orgId) return;
+    const now = new Date();
+    let start, end = endOfToday();
+    switch (timeline) {
+      case 'MTD': start = startOfMonth(now); break;
+      case 'QTD': start = startOfQuarter(now); break;
+      case '7D':  start = addDays(now, -7); break;
+      case '30D': start = addDays(now, -30); break;
+      case '90D': start = addDays(now, -90); break;
+      case 'CUSTOM':
+        start = new Date(customRange.start);
+        end   = new Date(customRange.end);
+        break;
+      default:    start = addDays(now, -30);
+    }
+    const startStr = format(start, 'yyyy-MM-dd');
+    const endStr   = format(end, 'yyyy-MM-dd');
 
-      const [mRes, sRes] = await Promise.all([
-        supabase.schema('public').rpc('org_user_goal_measurements', {
-          p_org_id: orgId, p_start: startStr, p_end: endStr, p_goal_id: null,
-          p_department: department === 'All Departments' ? null : department
-        }),
-        supabase.schema('public').rpc('org_user_completion_summary', { p_org_id: orgId, p_start: startStr, p_end: endStr })
-      ]);
+    const [mRes, sRes] = await Promise.all([
+      supabase.schema('public').rpc('org_user_goal_measurements', {
+        p_org_id: orgId, p_start: startStr, p_end: endStr, p_goal_id: null,
+        p_department: department === 'All Departments' ? null : department
+      }),
+      supabase.schema('public').rpc('org_user_completion_summary', { p_org_id: orgId, p_start: startStr, p_end: endStr })
+    ]);
 
-      if (cancel) return;
-      setMeasurements(mRes.error ? [] : (mRes.data || []));
-      setSummary(sRes.error ? [] : (sRes.data || []));
-      setErr(mRes.error?.message || sRes.error?.message || '');
-    })();
-    return () => { cancel = true; };
-  }, [orgId, department, timeline, customRange]);
+    if (cancel) return;
+    setMeasurements(mRes.error ? [] : (mRes.data || []));
+    setSummary(sRes.error ? [] : (sRes.data || []));
+    setErr(mRes.error?.message || sRes.error?.message || '');
+  })();
+  return () => { cancel = true; };
+  // ✅ Depend on primitives so identity doesn't churn
+}, [orgId, department, timeline, customRange.start, customRange.end]);
+
 
   // Options
   const departmentOptions = useMemo(() => {
@@ -368,6 +412,29 @@ export default function GoalsKpiTracker() {
 
   const goalTypeOptions = useMemo(() => ['All Goals', ...Array.from(new Set(goals.map(g => g.title)))], [goals]);
   const quarterOptions = useMemo(() => buildQuarterOptions({ yearsBack: 1, yearsForward: 1 }), []);
+  // Org Goal filter options (Alignment)
+  const ORG_GOAL_ALL = 'All Org Goals';
+const ORG_GOAL_UNALIGNED = 'Unaligned';
+
+const orgGoalOptions = useMemo(() => {
+  const labels = new Set();
+  for (const g of goals) {
+    const raw = g.alignment_label ?? (g.org_goal_id ? 'Org Goal' : ORG_GOAL_UNALIGNED);
+    const label = String(raw || '').trim() || ORG_GOAL_UNALIGNED;
+    labels.add(label);
+  }
+  // ensure Unaligned present at most once
+  const arr = Array.from(labels).sort((a, b) => a.localeCompare(b));
+  if (!arr.includes(ORG_GOAL_UNALIGNED)) arr.push(ORG_GOAL_UNALIGNED);
+  return [ORG_GOAL_ALL, ...Array.from(new Set(arr))];
+}, [goals]);
+
+
+  
+
+  const goalsById = useMemo(() => {
+    const m = new Map(); for (const g of goals) m.set(g.id, g); return m;
+  }, [goals]);
 
   // Filtered sets
   const filteredRows = useMemo(() => {
@@ -375,14 +442,14 @@ export default function GoalsKpiTracker() {
       if (department !== 'All Departments' && r.department !== department) return false;
       if (goalType !== 'All Goals' && r.goal_title !== goalType) return false;
       if (teamFilter !== 'All' && r.full_name !== teamFilter) return false;
+      if (orgGoal !== 'All Org Goals') {
+       const g = goalsById.get(r.goal_id);
+        const label = g?.alignment_label || (g?.org_goal_id ? 'Org Goal' : 'Unaligned');
+        if (label !== orgGoal) return false;
+      }
       return true;
     });
-  }, [measurements, department, goalType, teamFilter]);
-
-  const goalsById = useMemo(() => {
-    const m = new Map(); for (const g of goals) m.set(g.id, g); return m;
-  }, [goals]);
-
+  }, [measurements, department, goalType, teamFilter, orgGoal, goalsById]);
   const activeMeasureTypes = useMemo(() => {
     const typeSet = new Set();
     for (const row of filteredRows) {
@@ -404,6 +471,8 @@ export default function GoalsKpiTracker() {
       return { goal, current, series, last3, hasData };
     }).filter(b => b.hasData);
   }, [filteredRows, goals, aggMode]);
+
+
 
   const numericRegularBlocks = useMemo(() => {
     const typeGoals = goals.filter(g =>
@@ -442,7 +511,25 @@ export default function GoalsKpiTracker() {
   const qualitativeList = useMemo(() => goals.filter(g => g.measure_type === 'qualitative'), [goals]);
 
   const donut = monetaryBlocks[0] || null;
-  const donutPct = donut ? Math.max(0, Math.min(100, Math.round((donut.current / (donut.goal.target || 1)) * 100))) : 0;
+// --- replace your existing donutPct line with this aggregate ---
+const monetaryAgg = useMemo(() => {
+  // consider only goals with a positive target (valid denominator)
+  const withTargets = (monetaryBlocks || []).filter(
+    b => Number(b.goal?.target) > 0
+  );
+  const totalTarget = withTargets.reduce((s, b) => s + Number(b.goal.target || 0), 0);
+  const totalCurrent = withTargets.reduce((s, b) => s + Number(b.current || 0), 0);
+
+  // also compute how many were excluded (target <= 0) so we can optionally message it
+  const excluded = (monetaryBlocks || []).length - withTargets.length;
+
+  return { totalTarget, totalCurrent, excluded, considered: withTargets.length };
+}, [monetaryBlocks]);
+
+const donutPct =
+  monetaryAgg.totalTarget > 0
+    ? Math.max(0, Math.min(100, Math.round((monetaryAgg.totalCurrent / monetaryAgg.totalTarget) * 100)))
+    : 0;
 
   const topPerformers = useMemo(() => (summary || []).slice(0, 3), [summary]);
   const bottomPerformers = useMemo(() => {
@@ -461,6 +548,39 @@ export default function GoalsKpiTracker() {
 
   const gridClass = gridColsClass(visibleSections.length);
   const visibleCategories = useMemo(() => CATEGORY_KEYS.filter(k => (categoryBlocks[k]?.length || 0) > 0), [categoryBlocks]);
+  const orgGoalSummary = useMemo(
+    () => groupByOrgGoal(goals, filteredRows, aggMode),
+    [goals, filteredRows, aggMode]
+  );
+
+    // compute once
+const atRisk = useMemo(() => {
+  const soon = Date.now() + 14*24*3600*1000;
+  return [...monetaryBlocks, ...numericRegularBlocks].map(b => {
+    const d = goalsById.get(b.goal.id)?.deadline ? new Date(goalsById.get(b.goal.id).deadline) : null;
+    const pct = pctToTarget(b.current, b.goal.target);
+    return { ...b, deadline: d, pct };
+  }).filter(x => (x.deadline && x.deadline.getTime() <= soon) || x.pct < 60)
+    .sort((a,b) => (a.deadline?.getTime()||Infinity) - (b.deadline?.getTime()||Infinity));
+}, [monetaryBlocks, numericRegularBlocks, goalsById]);
+
+const stale = useMemo(() => {
+  const cutoff = Date.now() - 14*24*3600*1000;
+  const blocks = [...monetaryBlocks, ...numericRegularBlocks];
+  return blocks.map(b => {
+    const last = b.series[b.series.length-1];
+    const ts = last?.measured_at ? new Date(last.measured_at).getTime() : 0;
+    return { ...b, lastAt: ts };
+  }).filter(x => x.lastAt === 0 || x.lastAt < cutoff)
+    .sort((a,b) => a.lastAt - b.lastAt);
+}, [monetaryBlocks, numericRegularBlocks]);
+
+const needsTarget = useMemo(
+  () => goals.filter(g => Number(g.target) <= 0),
+  [goals]
+);
+
+
 
   return (
     <div className="flex flex-col h-screen bg-[var(--app-bg)] text-[var(--fg)]">
@@ -488,6 +608,9 @@ export default function GoalsKpiTracker() {
         goalType={goalType}
         setGoalType={setGoalType}
         goalTypeOptions={goalTypeOptions}
+        orgGoal={orgGoal}                          // NEW
+        setOrgGoal={setOrgGoal}                    // NEW
+        orgGoalOptions={orgGoalOptions}            // NEW
         timeline={timeline}
         setTimeline={setTimeline}
         customRange={customRange}
@@ -504,7 +627,37 @@ export default function GoalsKpiTracker() {
         ) : (
           <>
             <div className={`grid ${gridClass} gap-6 mb-10`}>
-              {/* Monetary */}
+              {orgGoalSummary.length > 0 && (
+                <section className={softCardCls }>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-lg font-medium">Org Goals</h3>
+                    <span className={pillMuted}>{orgGoalSummary.length} group{orgGoalSummary.length > 1 ? 's' : ''}</span>
+                  </div>
+                  <div className="space-y-3">
+                   {orgGoalSummary.map((g, i) => (
+  <div key={`${g.label}::${i}`} className="rounded-lg border border-[var(--border)] p-3 bg-[var(--surface)]">
+                        <div className="flex items-center justify-between text-sm">
+                          <div className="font-medium truncate">{g.label}</div>
+                          <div className={textMuted}>{g.count} linked goal{g.count > 1 ? 's' : ''}</div>
+                        </div>
+                        <div className="mt-2">
+                          <div className="h-2 rounded-full bg-[var(--card)] overflow-hidden">
+                            <div className={`h-2 ${barColor(g.pct)}`} style={{ width: `${g.pct}%` }} />
+                          </div>
+                          <div className={`mt-2 text-xs flex items-center justify-between ${textMuted}`}>
+                            <div>Progress: <strong className="text-[var(--fg)]">{g.pct}%</strong></div>
+                            <div>
+                              Current: <strong className="text-[var(--fg)]">{fmtMeasure(g.current)}</strong>
+                              <span className="mx-1">/</span>
+                              Target: <strong className="text-[var(--fg)]">{fmtMeasure(g.target)}</strong>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
               {visibleSections.includes('monetary') && (
                 <section className={softCardCls}>
                   <h3 className="text-lg font-medium mb-4">Monetary Goals</h3>
@@ -525,23 +678,32 @@ export default function GoalsKpiTracker() {
                     </div>
                   )}
 
-                  {donut && (
-                    <div className="mt-6 flex flex-col items-center">
-                      <div className="text-[var(--accent)]">
-                        <MinimalPieChart
-                          data={[{ value: donutPct, color: 'currentColor' }]}
-                          totalValue={100}
-                          lineWidth={15}
-                          label={() => `${donutPct}%`}
-                          labelStyle={{ fontSize: '18px', fontWeight: 600, fill: 'var(--fg)' }}
-                          background={gridStroke}
-                          animate
-                          style={{ height: '140px', width: '140px' }}
-                        />
-                      </div>
-                      <div className={`mt-3 text-xs ${textMuted}`}>Overall progress</div>
-                    </div>
-                  )}
+                  {monetaryAgg.considered > 0 && (
+  <div className="mt-6 flex flex-col items-center">
+    <div className="text-[var(--accent)]">
+      <MinimalPieChart
+        data={[{ value: donutPct, color: 'currentColor' }]}
+        totalValue={100}
+        lineWidth={15}
+        label={() => `${donutPct}%`}
+        labelStyle={{ fontSize: '18px', fontWeight: 600, fill: 'var(--fg)' }}
+        background={gridStroke}
+        animate
+        style={{ height: '140px', width: '140px' }}
+      />
+    </div>
+
+    <div className={`mt-3 text-xs ${textMuted}`}>
+      Overall progress across {monetaryAgg.considered} goal{monetaryAgg.considered > 1 ? 's' : ''}
+      {monetaryAgg.excluded > 0 && (
+        <span className="ml-1 opacity-80">
+          (excluded {monetaryAgg.excluded} with target ≤ 0)
+        </span>
+      )}
+    </div>
+  </div>
+)}
+
                 </section>
               )}
 
@@ -608,8 +770,95 @@ export default function GoalsKpiTracker() {
                   )}
                 </section>
               )}
+
+                        
+{/* // card */}
+{atRisk.length > 0 && (
+  <section className={softCardCls}>
+    <h3 className="text-lg font-medium mb-3">At-risk & Upcoming</h3>
+    <div className="grid grid-cols-1 sm:grid-cols-1 gap-3">
+      {atRisk.slice(0, 6).map(x => (
+        <div
+          key={x.goal.id}
+          className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 flex flex-col gap-2"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <span className="text-sm font-medium line-clamp-2">{x.goal.title}</span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0 ${statusColor(x.pct)}`}>
+              {x.pct}%
+            </span>
+          </div>
+
+            {x.deadline && (
+              <div className="text-[11px] text-[var(--fg-muted)]">
+                Due {x.deadline.toLocaleDateString()}
+              </div>
+            )}
+
+          <div className="h-1.5 rounded-full bg-[var(--card)] overflow-hidden">
+            <div
+              className={`h-1.5 ${barColor(x.pct)}`}
+              style={{ width: `${x.pct}%` }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  </section>
+)}
+
+<div className="rounded-xl border p-6 shadow-sm bg-[var(--card)] text-[var(--fg)] border-[var(--border)]">
+{stale.length > 0 && (
+  <section className={`mb-3 ${softCardCls}`}>
+    <h3 className="text-lg font-medium mb-3">Stale Measurements</h3>
+    <ul className="space-y-2">
+      {stale.slice(0,6).map(x => (
+        <li key={x.goal.id} className="flex items-center justify-between text-sm">
+          <span className="truncate">{x.goal.title}</span>
+          <span className={textMuted}>
+            {x.lastAt ? `Updated ${new Date(x.lastAt).toLocaleDateString()}` : 'No data yet'}
+          </span>
+        </li>
+      ))}
+    </ul>
+  </section>
+)}
+
+{needsTarget.length > 0 && (
+  <section className={`mb-3 ${softCardCls}`}>
+    <h3 className="text-lg font-medium mb-3">Needs Target</h3>
+    <ul className="space-y-1">
+      {needsTarget.slice(0,6).map(g => (
+        <li key={g.id} className="flex justify-between text-sm">
+          <span className="truncate">{g.title}</span>
+          <span className={pillMuted}>no target</span>
+        </li>
+      ))}
+    </ul>
+  </section>
+)}
+
+{orgGoalSummary.length > 0 && (
+  <section className={softCardCls}>
+    <h3 className="text-lg font-medium mb-3">Alignment Coverage</h3>
+    <ul className="space-y-2">
+      {orgGoalSummary.map((g,i) => (
+        <li key={`${g.label}:${i}`} className="flex items-center justify-between text-sm">
+          <span className="truncate">{g.label}</span>
+          <span className={pillMuted}>{g.count} goals</span>
+        </li>
+      ))}
+    </ul>
+  </section>
+)}
+
+
+</div>
+
+
             </div>
 
+  
             {/* Category rails (only for a selected employee) */}
             {selectedEmployeeId && (CATEGORY_KEYS.some(k => (categoryBlocks[k]?.length || 0) > 0)) && (
               <div className="mb-10">

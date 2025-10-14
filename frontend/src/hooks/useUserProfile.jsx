@@ -45,7 +45,9 @@ export function useUserProfile() {
           .eq("id", authUser.id)
           .maybeSingle();
         row = data || null;
-      } catch { /* profiles table may not exist; ignore */ }
+      } catch { /* profiles table may not exist; ignore */
+        row = null;
+       }
 
       // Try to get an employee row for this user (prefer an RPC with security definer)
       let emp = null;

@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box, Card, CardContent, TextField, Button, Typography, Autocomplete,
   Select, MenuItem, InputLabel, FormControl, Chip, InputAdornment, IconButton,
-  Tooltip, Table, TableHead, TableRow, TableCell, TableBody, Divider, CssBaseline
+  Tooltip, Table, TableHead, TableRow, TableCell, TableBody, Divider, CssBaseline, Avatar, AvatarGroup, TableContainer, Paper
 } from '@mui/material';
 import { ThemeProvider, createTheme, alpha } from '@mui/material/styles';
 
@@ -42,6 +42,7 @@ function buildQuarterFilterOptions() {
 }
 function normalizeGoalRow(r) {
   const meta = safeJson(r.meta);
+  console.log('normalizing', r, meta);
   return {
     ...r,
     id: r.id ?? r.goal_id,
@@ -53,13 +54,14 @@ function normalizeGoalRow(r) {
     deadline: r.deadline || r.due_date || r.target_date || r.due_on || r.end_date || null,
     self_selected: String(meta.self_selected ?? '').toLowerCase() === 'true',
     owner_employee_id: r.owner_employee_id || null,
-    department: r.department || null,
+    department: r.department || r.department_name || r.dept || meta.department || null,
     description: r.description || r.notes || '',
     measure_type: r.measure_type || 'numeric',
      org_goal_id: r.org_goal_id ?? r.goal_org_goal_id ?? null,               // NEW
     alignment_label: meta.alignment_label || r.alignment_label || null,     // NEW
   };
 }
+
 const currencySymbol = (code) =>
   ({ USD: '$', EUR: '€', GBP: '£', GHS: 'GH₵' }[(code || '').toUpperCase()] || '');
 const fmtMoney = (n, code) => `${currencySymbol(code)} ${Number(n || 0).toLocaleString()}`;
@@ -70,24 +72,57 @@ const displayDeadline = (g) => {
 const quarterFilterOptions = buildQuarterFilterOptions();
 
 // ---------- MUI theme that reads your CSS vars ----------
+// ---------- MUI theme that reads your CSS vars ----------
 function useMuiTheme(darkMode) {
-  // Map your Tailwind token palette to MUI
+  const light = {
+    bg: '#f8fafc',
+    card: '#ffffff',
+    surface: '#f1f5f9',
+    fg: '#0f172a',
+    fgMuted: '#64748b',
+    border: 'rgba(15, 23, 42, 0.12)',
+    accent: '#2563eb',
+  };
+  const dark = {
+    bg: '#0b1220',
+    card: '#0f172a',
+    surface: '#111826',
+    fg: '#e5e7eb',
+    fgMuted: '#9aa4b2',
+    border: 'rgba(148, 163, 184, 0.24)',
+    accent: '#60a5fa',
+  };
+  const t = darkMode ? dark : light;
+
   const theme = createTheme({
     palette: {
       mode: darkMode ? 'dark' : 'light',
-      primary: { main: '#2563eb' },
-      secondary: { main: '#64748b' },
-      background: {
-        default: 'var(--app-bg, #f8fafc)', // body bg (you can keep your Tailwind body bg)
-        paper: 'var(--card, #ffffff)',     // cards/sheets
-      },
-      text: {
-        primary: '#0f172a',
-        secondary: '#64748b',
-      },
-      divider: 'rgba(148,163,184,0.3)',
+      // IMPORTANT: literal colors here, not CSS variables
+      primary: { main: t.accent },
+      secondary: { main: t.fgMuted },
+      background: { default: t.bg, paper: t.card },
+      text: { primary: t.fg, secondary: t.fgMuted },
+      divider: t.border,
     },
     components: {
+      MuiCssBaseline: {
+        styleOverrides: `
+          :root { color-scheme: ${darkMode ? 'dark' : 'light'}; }
+          /* tokens still drive the app via CSS vars */
+          body {
+            background: var(--bg, ${t.bg});
+            color: var(--fg, ${t.fg});
+          }
+          * { scrollbar-color: var(--border, ${t.border}) transparent; }
+          *::-webkit-scrollbar { height: 10px; width: 10px; }
+          *::-webkit-scrollbar-thumb {
+            background: color-mix(in oklab, var(--border, ${t.border}) 85%, transparent);
+            border-radius: 8px;
+            border: 2px solid transparent;
+            background-clip: padding-box;
+          }
+        `,
+      },
       MuiPaper: {
         styleOverrides: {
           root: {
@@ -104,17 +139,18 @@ function useMuiTheme(darkMode) {
             color: 'var(--fg)',
             border: '1px solid var(--border)',
             borderRadius: 16,
-            boxShadow: '0 4px 24px rgba(2,6,23,0.08)',
+            boxShadow: '0 8px 32px rgba(2,6,23,0.12)',
           },
         },
       },
       MuiTableCell: {
         styleOverrides: {
-          root: { color: 'var(--fg)' },
+          root: { color: 'var(--fg)', borderColor: 'var(--border)' },
           head: {
             color: 'var(--fg)',
-            backgroundColor: 'color-mix(in oklab, var(--card) 92%, transparent)',
-            fontWeight: 600,
+            backgroundColor: 'color-mix(in oklab, var(--card) 90%, transparent)',
+            fontWeight: 700,
+            letterSpacing: 0.2,
           },
         },
       },
@@ -123,7 +159,7 @@ function useMuiTheme(darkMode) {
           root: {
             backgroundColor: 'var(--surface)',
             '& fieldset': { borderColor: 'var(--border)' },
-            '&:hover fieldset': { borderColor: 'color-mix(in oklab, var(--fg) 30%, transparent)' },
+            '&:hover fieldset': { borderColor: 'color-mix(in oklab, var(--fg) 28%, transparent)' },
             '&.Mui-focused fieldset': { borderColor: 'var(--accent)' },
           },
           input: { color: 'var(--fg)' },
@@ -141,6 +177,7 @@ function useMuiTheme(darkMode) {
             backgroundColor: 'color-mix(in oklab, var(--surface) 85%, transparent)',
             color: 'var(--fg)',
             border: '1px solid var(--border)',
+            borderRadius: 999,
           },
           outlined: { borderColor: 'var(--border)' },
         },
@@ -148,6 +185,7 @@ function useMuiTheme(darkMode) {
       MuiTooltip: {
         styleOverrides: {
           tooltip: {
+            // alpha() only used on a literal color => safe
             backgroundColor: alpha('#000', darkMode ? 0.8 : 0.75),
             color: '#fff',
           },
@@ -161,15 +199,89 @@ function useMuiTheme(darkMode) {
         },
       },
       MuiDivider: {
-        styleOverrides: {
-          root: { borderColor: 'var(--border)' },
-        },
+        styleOverrides: { root: { borderColor: 'var(--border)' } },
       },
     },
+    typography: { fontSize: 13, h6: { letterSpacing: 0.2 } },
   });
+
   return theme;
 }
 
+
+// small deterministic color for initials
+function stringToColor(str = '') {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = str.charCodeAt(i) + ((h << 5) - h);
+  const hue = Math.abs(h) % 360;
+  return `hsl(${hue}deg 60% 50%)`;
+}
+function InitialAvatar({ name }) {
+  const initials = (name || '')
+    .split(' ')
+    .filter(Boolean)
+    .map(s => s[0]?.toUpperCase())
+    .slice(0, 2)
+    .join('') || '•';
+  return (
+    <Avatar
+      sx={{
+        width: 24, height: 24, fontSize: 12,
+        bgcolor: stringToColor(name), color: '#fff'
+      }}
+    >
+      {initials}
+    </Avatar>
+  );
+}
+
+// --- name helpers (replace InitialAvatar if you like) ---
+function getInitials(name = '') {
+  return (name || '')
+    .split(' ')
+    .filter(Boolean)
+    .map(s => s[0]?.toUpperCase())
+    .slice(0, 2)
+    .join('') || '•';
+}
+
+function PersonChip({ name }) {
+  return (
+    <Chip
+      size="small"
+      avatar={
+        <Avatar
+          sx={{
+            width: 20,
+            height: 20,
+            fontSize: 10,
+            bgcolor: stringToColor(name),
+            color: '#fff',
+          }}
+        >
+          {getInitials(name)}
+        </Avatar>
+      }
+      label={name}
+      variant="outlined"
+      sx={{
+        borderColor: 'var(--border)',
+        bgcolor: 'color-mix(in oklab, var(--surface) 85%, transparent)',
+      }}
+    />
+  );
+}
+
+
+function MeasurePill({ g }) {
+  if (g.measure_type === 'monetary') {
+    return <Chip size="small" label={fmtMoney(g.target ?? 0, g.currency_code)} />;
+  }
+  if (g.measure_type === 'numeric') {
+    return <Chip size="small" label={`${Number(g.target ?? 0).toLocaleString()} ${g.unit || ''}`} />;
+  }
+  return <Chip size="small" variant="outlined" label="Qualitative" />;
+}
 
 
 export default function GoalsPage() {
@@ -408,6 +520,8 @@ if (gRes.error) {
       return hay.includes(q);
     });
   }, [rows, search]);
+
+  console.log('render', { rows, filteredRows });  
 
   async function handleSave() {
     setErr('');
@@ -849,105 +963,127 @@ const alignment_label = form.alignmentObj?.label || 'None';
                 </Box>
                 <CardContent>
                   {loading ? (
-                    <div className="p-4">
-                      <div className="text-sm text-[var(--fg-muted)]">Loading…</div>
-                    </div>
-                  ) : err ? (
-                    <EmptyState title="Unable to load goals" subtitle={err} />
-                  ) : filteredRows.length === 0 ? (
-                    rows.length === 0 ? (
-                      <EmptyState title="No goals added yet" subtitle="Create your first goal to get started." />
-                    ) : (
-                      <EmptyState title="No matches" subtitle="Try a different search." />
-                    )
-                  ) : (
-                    <Table size="small" sx={{ '& td, & th': { borderColor: 'var(--border)' } }}>
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>Goal</TableCell>
-                          <TableCell>Measure</TableCell>
-                          <TableCell>Alignment</TableCell>
-                          <TableCell>Quarter</TableCell>
-                          <TableCell>Deadline</TableCell>
-                          <TableCell>Department</TableCell>
-                          <TableCell align="right">Actions</TableCell>
-                        </TableRow>
-                      </TableHead>
-
-                     <TableBody>
-  {filteredRows.map(g => (
-    <TableRow
-      key={g.id}
-      hover
-      sx={{ '&:hover': { backgroundColor: 'color-mix(in oklab, var(--surface) 85%, transparent)' } }}
+  <div className="p-4">
+    <div className="text-sm text-[var(--fg-muted)]">Loading…</div>
+  </div>
+) : err ? (
+  <EmptyState title="Unable to load goals" subtitle={err} />
+) : filteredRows.length === 0 ? (
+  rows.length === 0 ? (
+    <EmptyState title="No goals added yet" subtitle="Create your first goal to get started." />
+  ) : (
+    <EmptyState title="No matches" subtitle="Try a different search." />
+  )
+) : (
+  <TableContainer
+    component={Paper}
+    elevation={0}
+    sx={{
+      borderRadius: 0,
+      border: '1px solid var(--border)',
+      // overflow: 'hidden',
+      // maxHeight: 520,
+    }}
+  >
+    <Table stickyHeader size="small"
+      sx={{
+        '& td, & th': { borderColor: 'var(--border)' },
+        '& thead th': {
+          backdropFilter: 'saturate(180%) blur(8px)',
+        },
+        '& tbody tr:hover': {
+          backgroundColor: 'color-mix(in oklab, var(--surface) 88%, transparent)',
+        },
+        '& tbody tr:nth-of-type(odd)': {
+          backgroundColor: 'color-mix(in oklab, var(--surface) 80%, transparent)',
+        },
+      }}
     >
-      <TableCell sx={{ maxWidth: 420 }}>
-        <Typography fontWeight={600}>{g.title}</Typography>
-        {g.description && (
-          <Typography variant="body2" color="text.secondary" noWrap>
-            {g.description}
-          </Typography>
-        )}
-        {(g.assignees && g.assignees.length > 0) && (
-          <Box mt={1} sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-            {g.assignees.slice(0, 4).map(a => (
-              <Chip key={a.id} label={a.name} size="small" />
-            ))}
-            {g.assignees.length > 4 && (
-              <Chip label={`+${g.assignees.length - 4} more`} size="small" variant="outlined" />
-            )}
-          </Box>
-        )}
-      </TableCell>
+      <TableHead>
+        <TableRow>
+          <TableCell sx={{ width: 460 }}>Goal</TableCell>
+          <TableCell sx={{ width: 180 }}>Measure</TableCell>
+          <TableCell sx={{ width: 220 }}>Alignment</TableCell>
+          <TableCell sx={{ width: 110 }}>Quarter</TableCell>
+          <TableCell sx={{ width: 120 }}>Deadline</TableCell>
+          <TableCell sx={{ width: 160 }}>Department</TableCell>
+          <TableCell align="right" sx={{ width: 120 }}>Actions</TableCell>
+        </TableRow>
+      </TableHead>
 
-      <TableCell sx={{ whiteSpace: 'nowrap' }}>
-        {g.measure_type === 'monetary'
-          ? fmtMoney(g.target ?? 0, g.currency_code)
-          : g.measure_type === 'numeric'
-            ? `${Number(g.target ?? 0).toLocaleString()} ${g.unit || ''}`
-            : 'Qualitative'}
-      </TableCell>
+      <TableBody>
+        {filteredRows.map((g) => (
+          <TableRow key={g.id} hover sx={{ height: 56 }}>
+            <TableCell sx={{ maxWidth: 460 }}>
+  <Typography fontWeight={700} title={g.title}>
+    {g.title}
+  </Typography>
 
-      {/* NEW: Alignment cell */}
-      <TableCell sx={{ maxWidth: 220 }}>
-        {g.alignment_label
-          ? <Chip size="small" variant="outlined" label={g.alignment_label} />
-          : <span>—</span>}
-      </TableCell>
+  {g.description && (
+    <Typography
+      variant="body2"
+      color="text.secondary"
+      sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}  // ⬅️ full content
+      title={g.description}
+    >
+      {g.description}
+    </Typography>
+  )}
 
-      <TableCell>{g.quarter || '—'}</TableCell>
-      <TableCell>{displayDeadline(g)}</TableCell>
-      <TableCell>{g.department || '—'}</TableCell>
-
-      <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-        <Tooltip title="Edit Goal">
-          <IconButton color="primary" size="small" onClick={() => handleEdit(g)}>
-            <Edit />
-          </IconButton>
+  {(g.assignees?.length ?? 0) > 0 && (
+    <Box mt={1} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+      {g.assignees.slice(0, 4).map(a => (
+        <PersonChip key={a.id} name={a.name} />
+      ))}
+      {g.assignees.length > 4 && (
+        <Tooltip title={g.assignees.slice(4).map(a => a.name).join(', ')}>
+          <Chip size="small" variant="outlined" label={`+${g.assignees.length - 4} more`} />
         </Tooltip>
-        <Tooltip title="Delete Goal">
-          <IconButton color="error" size="small" onClick={() => handleDelete(g.id)}>
-            <Delete />
-          </IconButton>
-        </Tooltip>
-      </TableCell>
-    </TableRow>
-  ))}
-</TableBody>
+      )}
+    </Box>
+  )}
+</TableCell>
 
-                    </Table>
-                  )}
 
-                  <Box mt={4} sx={{ textAlign: 'center' }}>
-                    <Button
-                      variant="outlined"
-                      size="large"
-                      onClick={() => (window.location.href = '/dashboard')}
-                      sx={{ borderRadius: 24, px: 4, py: 1.5, fontSize: 18, fontWeight: 600 }}
-                    >
-                      Back to Dashboard
-                    </Button>
-                  </Box>
+            <TableCell sx={{ whiteSpace: 'nowrap' }}>
+              <MeasurePill g={g} />
+            </TableCell>
+
+            {/* Alignment */}
+            <TableCell sx={{ maxWidth: 220 }}>
+              {g.alignment_label
+                ? <Chip size="small" variant="outlined" label={g.alignment_label} />
+                : <span>—</span>}
+            </TableCell>
+
+            <TableCell>{g.quarter || '—'}</TableCell>
+            <TableCell>{displayDeadline(g)}</TableCell>
+            <TableCell sx={{ whiteSpace: 'nowrap' }}>
+  {g.department
+    ? <Chip size="small" variant="outlined" label={g.department} />
+    : (g.meta?.department || '—')}
+</TableCell>
+
+
+            <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+              <Tooltip title="Edit Goal">
+                <IconButton color="primary" size="small" onClick={() => handleEdit(g)}>
+                  <Edit fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Delete Goal">
+                <IconButton color="error" size="small" onClick={() => handleDelete(g.id)}>
+                  <Delete fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  </TableContainer>
+)}
+
                 </CardContent>
               </Card>
             </Box>

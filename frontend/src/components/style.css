@@ -35,6 +35,12 @@
         /* 12px */
     }
 
+    .MuiTableCell-root {
+        font-family: 'Inter', system-ui, sans-serif !important;
+        font-size: 0.80rem !important;
+        /* 14px */
+    }
+
     .tabsContainer {
         position: sticky;
         top: 0;

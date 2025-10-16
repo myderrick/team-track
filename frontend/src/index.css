@@ -37,7 +37,7 @@
     font-size: 80%;
   }
 
-  .MuiCardContent-root, .MuiPaper-root, .MuiPopover-paper, .MuiTable-root, .MuiTypography-root, .MuiChip-root, .MuiInputBase-root{
+  .MuiCardContent-root, .MuiPaper-root, .MuiPopover-paper, .MuiTable-root, .MuiTypography-root, .MuiChip-root, .MuiInputBase-root, .MuiList-root, .MuiMenu-paper, .MuiMenuItem-root, .MuiDialog-paper, .MuiDialogContent-root, .MuiTableCell-root {
     
     font-family: 'Inter', system-ui, sans-serif !important;
     

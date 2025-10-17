@@ -859,139 +859,139 @@ export default function GoalsKpiTracker() {
         goalTypeOptions={goalTypeOptions}
         orgGoal={orgGoal} // NEW
         setOrgGoal={setOrgGoal} // NEW
-        orgGoalOptions={orgGoalOptions} // NEW
-        timeline={timeline}
-        setTimeline={setTimeline}
-        customRange={customRange}
-        setCustomRange={setCustomRange}
-        aggMode={aggMode}
-        setAggMode={setAggMode}
-      />
+         // NEW
+          timeline={timeline}
+          setTimeline={setTimeline}
+          customRange={customRange}
+          setCustomRange={setCustomRange}
+          aggMode={aggMode}
+          setAggMode={setAggMode}
+              />
 
-      <main className="flex-1 ml-20 mt-4 mr-4 mb-4 px-0 overflow-auto">
-        {loading ? (
-          <div className="p-6">
-            <div className={`text-sm ${textMuted}`}>Loading…</div>
-          </div>
-        ) : err ? (
-          <div className="p-6">
-            <EmptyState title="Unable to load data" subtitle={err} />
-          </div>
-        ) : (
-          <>
-            <div className={`grid ${gridClass} gap-6 mb-10`}>
-              {orgGoalSummary.length > 0 && (
-                <section className={softCardCls}>
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-lg font-medium">Org Goals</h3>
-                    <span className={pillMuted}>
-                      {orgGoalSummary.length} group
-                      {orgGoalSummary.length > 1 ? "s" : ""}
-                    </span>
+              <main className="flex-1 ml-20 mt-4 mr-4 mb-4 px-0 overflow-auto">
+          {loading ? (
+            <div className="p-6">
+              <div className={`text-sm ${textMuted}`}>Loading…</div>
+            </div>
+          ) : err ? (
+            <div className="p-6">
+              <EmptyState title="Unable to load data" subtitle={err} />
+            </div>
+          ) : (
+            <>
+              <div className={`grid ${gridClass} gap-6 mb-10`}>
+                {orgGoalSummary.length > 0 && (
+            <section className={softCardCls}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-lg font-medium">🏢 Organisational Goals</h3>
+                <span className={pillMuted}>
+                  {orgGoalSummary.length} group
+                  {orgGoalSummary.length > 1 ? "s" : ""}
+                </span>
+              </div>
+              <div className="space-y-3">
+                {orgGoalSummary.map((g, i) => (
+                  <div
+              key={`${g.label}::${i}`}
+              className="rounded-lg border border-[var(--border)] p-3 bg-[var(--surface)]"
+                  >
+              <div className="flex items-center justify-between text-sm">
+                <div className="font-medium truncate">{g.label}</div>
+                <div className={textMuted}>
+                  {g.count} linked goal{g.count > 1 ? "s" : ""}
+                </div>
+              </div>
+              <div className="mt-2">
+                <div className="h-2 rounded-full bg-[var(--card)] overflow-hidden">
+                  <div
+                    className={`h-2 ${barColor(g.pct)}`}
+                    style={{width: `${g.pct}%`}}
+                  />
+                </div>
+                <div
+                  className={`mt-2 text-xs flex items-center justify-between ${textMuted}`}
+                >
+                  <div>
+                    📈 Progress:{" "}
+                    <strong className="text-[var(--fg)]">
+                {g.pct}%
+                    </strong>
                   </div>
-                  <div className="space-y-3">
-                    {orgGoalSummary.map((g, i) => (
-                      <div
-                        key={`${g.label}::${i}`}
-                        className="rounded-lg border border-[var(--border)] p-3 bg-[var(--surface)]"
-                      >
-                        <div className="flex items-center justify-between text-sm">
-                          <div className="font-medium truncate">{g.label}</div>
-                          <div className={textMuted}>
-                            {g.count} linked goal{g.count > 1 ? "s" : ""}
-                          </div>
-                        </div>
-                        <div className="mt-2">
-                          <div className="h-2 rounded-full bg-[var(--card)] overflow-hidden">
-                            <div
-                              className={`h-2 ${barColor(g.pct)}`}
-                              style={{width: `${g.pct}%`}}
-                            />
-                          </div>
-                          <div
-                            className={`mt-2 text-xs flex items-center justify-between ${textMuted}`}
-                          >
-                            <div>
-                              Progress:{" "}
-                              <strong className="text-[var(--fg)]">
-                                {g.pct}%
-                              </strong>
-                            </div>
-                            <div>
-                              Current:{" "}
-                              <strong className="text-[var(--fg)]">
-                                {fmtMeasure(g.current)}
-                              </strong>
-                              <span className="mx-1">/</span>
-                              Target:{" "}
-                              <strong className="text-[var(--fg)]">
-                                {fmtMeasure(g.target)}
-                              </strong>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                  <div>
+                    Current:{" "}
+                    <strong className="text-[var(--fg)]">
+                {fmtMeasure(g.current)}
+                    </strong>
+                    <span className="mx-1">/</span>
+                    Target:{" "}
+                    <strong className="text-[var(--fg)]">
+                {fmtMeasure(g.target)}
+                    </strong>
                   </div>
-                </section>
-              )}
-              {visibleSections.includes("monetary") && (
-                <section className={softCardCls}>
-                  <h3 className="text-lg font-medium mb-4">Monetary Goals</h3>
-                  {monetaryBlocks.length === 0 ? (
-                    <EmptyState
-                      title="No monetary goals"
-                      subtitle="Create a monetary goal to see progress."
-                    />
-                  ) : (
-                    <div className="grid grid-cols-1 gap-4">
-                      {monetaryBlocks.map(({goal, current, series, last3}) => (
-                        <GoalStatCard
-                          key={goal.id}
-                          goal={goal}
-                          currentValue={current}
-                          fmt={fmtMeasure}
-                          series={series}
-                          last3={last3}
-                        />
-                      ))}
-                    </div>
-                  )}
-
-                  {monetaryAgg.considered > 0 && (
-                    <div className="mt-6 flex flex-col items-center">
-                      <div className="text-[var(--accent)]">
-                        <MinimalPieChart
-                          data={[{value: donutPct, color: "currentColor"}]}
-                          totalValue={100}
-                          lineWidth={15}
-                          label={() => `${donutPct}%`}
-                          labelStyle={{
-                            fontSize: "18px",
-                            fontWeight: 600,
-                            fill: "var(--fg)",
-                          }}
-                          background={gridStroke}
-                          animate
-                          style={{height: "140px", width: "140px"}}
-                        />
-                      </div>
-
-                      <div className={`mt-3 text-xs ${textMuted}`}>
-                        Overall progress across {monetaryAgg.considered} goal
-                        {monetaryAgg.considered > 1 ? "s" : ""}
-                        {monetaryAgg.excluded > 0 && (
-                          <span className="ml-1 opacity-80">
-                            (excluded {monetaryAgg.excluded} with target ≤ 0)
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </section>
+                </div>
+              </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+                )}
+                {visibleSections.includes("monetary") && (
+            <section className={softCardCls}>
+              <h3 className="text-lg font-medium mb-4">💰 Monetary Goals</h3>
+              {monetaryBlocks.length === 0 ? (
+                <EmptyState
+                  title="No monetary goals"
+                  subtitle="Create a monetary goal to see progress."
+                />
+              ) : (
+                <div className="grid grid-cols-1 gap-4">
+                  {monetaryBlocks.map(({goal, current, series, last3}) => (
+              <GoalStatCard
+                key={goal.id}
+                goal={goal}
+                currentValue={current}
+                fmt={fmtMeasure}
+                series={series}
+                last3={last3}
+              />
+                  ))}
+                </div>
               )}
 
-              {/* Numeric */}
+              {monetaryAgg.considered > 0 && (
+                <div className="mt-6 flex flex-col items-center">
+                  <div className="text-[var(--accent)]">
+              <MinimalPieChart
+                data={[{value: donutPct, color: "currentColor"}]}
+                totalValue={100}
+                lineWidth={15}
+                label={() => `${donutPct}%`}
+                labelStyle={{
+                  fontSize: "18px",
+                  fontWeight: 600,
+                  fill: "var(--fg)",
+                }}
+                background={gridStroke}
+                animate
+                style={{height: "140px", width: "140px"}}
+              />
+                  </div>
+
+                  <div className={`mt-3 text-xs ${textMuted}`}>
+              🎯 Overall progress across {monetaryAgg.considered} goal
+              {monetaryAgg.considered > 1 ? "s" : ""}
+              {monetaryAgg.excluded > 0 && (
+                <span className="ml-1 opacity-80">
+                  (excluded {monetaryAgg.excluded} with target ≤ 0)
+                </span>
+              )}
+                  </div>
+                </div>
+              )}
+            </section>
+                )}
+
+                {/* Numeric */}
               {visibleSections.includes("numeric") && (
                 <section className={softCardCls}>
                   <h3 className="text-lg font-medium mb-4">Numeric Goals</h3>

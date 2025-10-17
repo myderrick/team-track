@@ -188,7 +188,7 @@ if (error) {
       // (Optional) Invite email
       if (isEmail(form.email)) {
         try {
-          const resp = await fetch('/functions/v1/invite-employee', {
+          const resp = await fetch('/functions/v1/invite-staff', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

@@ -242,6 +242,8 @@ export default function IndividualLeaderboard({ period = 'All', department, loca
           training: [],
         };
 
+        //console log orgId and empl id for debugging
+        console.log('orgId', orgId, 'emp.id', emp.id);
         return (
           <Disclosure key={emp.id} as="div" className="border border-[var(--border)] rounded-xl overflow-hidden">
             {({ open }) => (
@@ -295,15 +297,25 @@ export default function IndividualLeaderboard({ period = 'All', department, loca
   recoveryDeltaDays={perf.recoveryDeltaDays /* optional */}
   onNudge={async () => {
     try {
-      await supabase.schema('app').rpc('send_nudge_email', {
+    const { data, error } = await supabase
+      .schema('public')
+      // 🚨 Change the function name here
+      .rpc('send_nudge_email_direct', { 
         p_org_id: orgId,
         p_employee_id: emp.id,
         p_message: `Hi ${emp.full_name || 'there'}, quick reminder to update your items.`
       });
-    } catch (e) {
-      console.error('Nudge failed', e);
-      // Optional: toast
+
+    if (error) {
+        // Handle error: check for the exception raised in your function
+        console.error('Nudge failed:', error.message);
+    } else {
+        // Data will contain the JSONB response from send_nudge_email_now
+        console.log('Nudge initiated:', data); 
     }
+} catch (e) {
+    console.error('RPC call error:', e);
+}
   }}
   onSnooze={async () => {
     try {

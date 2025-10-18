@@ -146,78 +146,106 @@ useEffect(() => {
 }, [orgId]);
 
   async function submit(e) {
-    e.preventDefault();
-    setBusy(true);
-    setError('');
-    setOkMsg('');
+  e.preventDefault();
+  setBusy(true);
+  setError('');
+  setOkMsg('');
 
+  // Helper: fetch your role in this org (fresh)
+  async function getMyOrgRole(p_org_id) {
     try {
-
-       // Soft email validation rules when email is provided
-    if (form.email) {
-       const dom = emailDomain(form.email);
-       if (PUBLIC_EMAIL_DOMAINS.has(dom)) {
-         throw new Error('Please use a company email (personal email domains are not allowed).');
-       }
-       const ok = await domainBelongsToThisOrg(dom);
-       if (!ok) {
-         throw new Error(`“${dom}” is not a registered domain for this organization.`);
-       }
-     }
-
-      // Save employee row
-      const { error } = await supabase.rpc('app.add_employee_with_org', {
-        p_org_id: orgId,
-        p_full_name: form.full_name.trim(),
-        p_email: isEmail(form.email) ? form.email.trim() : null,
-        p_title: form.title.trim() || null,
-        p_department: form.department || null,
-        p_location: form.location || null,
-        p_start_date: form.start_date || null,
-        // If your RPC supports it:
-        // p_employee_code: form.employee_id || null,
-        p_manager_id: form.manager_id || null,
-      });
-if (error) {
-      // Nice duplicate message on unique violations
-      if (error.code === '23505' || /duplicate key/i.test(error.message || '')) {
-        throw new Error('An employee with this email already exists in this organization.');
-      }
-      throw error;
-    }
-      // (Optional) Invite email
-      if (isEmail(form.email)) {
-        try {
-          const resp = await fetch('/functions/v1/invite-staff', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              email: form.email.trim(),
-              full_name: form.full_name.trim(),
-              org_id: orgId,
-              title: form.title || null,
-              join_code: freshJoinCode || undefined, // include if generated now
-            }),
-          });
-          const payload = await resp.json();
-          if (!resp.ok) throw new Error(payload?.error || 'Invite failed');
-          setOkMsg(`Saved. Invite email sent to ${form.email}.`);
-        } catch (e) {
-          setOkMsg(
-            `Saved. Could not send invite: ${String(e.message || e)}. You can resend from People later.`
-          );
-        }
-      } else {
-        setOkMsg('Employee saved.');
-      }
-
-      setTimeout(() => nav('/dashboard', { replace: true }), 700);
-    } catch (err) {
-      setError(String(err?.message || err));
-    } finally {
-      setBusy(false);
+      const r = await rpcSafe('user_orgs'); // returns rows with { organization_id, role, is_active }
+      const rows = Array.isArray(r.data) ? r.data : [];
+      const mine = rows.find(o => o.is_active && o.organization_id === p_org_id);
+      return (mine?.role || '').toLowerCase(); // e.g., 'owner' | 'admin' | 'manager' | 'employee'
+    } catch {
+      return '';
     }
   }
+
+  try {
+    if (!orgId) throw new Error('No organization selected.');
+
+    // ─────────────────────────────────────────────────────────────
+    // 1) Org permission check (owner/admin only)
+    // ─────────────────────────────────────────────────────────────
+    const myRole = await getMyOrgRole(orgId);
+    const canManagePeople = ['owner', 'admin'].includes(myRole);
+    if (!canManagePeople) {
+      throw new Error('You do not have permission to add or invite employees for this organization.');
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // 2) Soft email validation rules when email is provided
+    // ─────────────────────────────────────────────────────────────
+    if (form.email) {
+      const dom = emailDomain(form.email);
+      if (PUBLIC_EMAIL_DOMAINS.has(dom)) {
+        throw new Error('Please use a company email (personal email domains are not allowed).');
+      }
+      const ok = await domainBelongsToThisOrg(dom);
+      if (!ok) {
+        throw new Error(`“${dom}” is not a registered domain for this organization.`);
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // 3) Save employee row (server-side does the real write)
+    // ─────────────────────────────────────────────────────────────
+    const { error: saveErr } = await supabase.rpc('app.add_employee_with_org', {
+      p_org_id: orgId,
+      p_full_name: form.full_name.trim(),
+      p_email: isEmail(form.email) ? form.email.trim() : null,
+      p_title: form.title.trim() || null,
+      p_department: form.department || null,
+      p_location: form.location || null,
+      p_start_date: form.start_date || null,
+      // p_employee_code: form.employee_id || null, // if your RPC supports it
+      p_manager_id: form.manager_id || null,
+    });
+
+    if (saveErr) {
+      // Nice duplicate message on unique violations
+      if (saveErr.code === '23505' || /duplicate key/i.test(saveErr.message || '')) {
+        throw new Error('An employee with this email already exists in this organization.');
+      }
+      throw saveErr;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // 4) Optional invite (owner/admin only)
+    // ─────────────────────────────────────────────────────────────
+    if (isEmail(form.email)) {
+      try {
+        const { data, error } = await supabase.functions.invoke('invite-staff', {
+          body: {
+            email: form.email.trim(),
+            full_name: form.full_name.trim(),
+            org_id: orgId,
+            title: form.title || null,
+            join_code: freshJoinCode || undefined, // include if just rotated
+          },
+        });
+        if (error) throw error;
+        // data contains your edge response payload (e.g., { ok: true, employee_id, invited_user_id })
+        setOkMsg(`Saved. Invite email sent to ${form.email}.`);
+      } catch (e) {
+        setOkMsg(
+          `Saved. Could not send invite: ${String(e.message || e)}. You can resend from People later.`
+        );
+      }
+    } else {
+      setOkMsg('Employee saved.');
+    }
+
+    setTimeout(() => nav('/dashboard', { replace: true }), 700);
+  } catch (err) {
+    setError(String(err?.message || err));
+  } finally {
+    setBusy(false);
+  }
+}
+
 
   return (
     <div className="min-h-screen bg-gray-50">

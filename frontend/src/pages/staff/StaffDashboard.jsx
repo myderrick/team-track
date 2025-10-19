@@ -105,6 +105,8 @@ const normalizedGoals = (data?.goals || []).map(g => ({
   currency_code: g.currency ?? g.currency_code ?? null,
   unit: g.unit ?? g.measure_unit ?? g.uom ?? '',
   measure_type: g.measure_type ?? g.type ?? (g.currency ? 'monetary' : 'numeric'),
+  //org_goal
+  org_goal_label: g.org_goal_label ?? 'None',  // ✅ use the DB label
 }));
 
 setGoals(normalizedGoals);
@@ -300,6 +302,7 @@ setGoals(normalizedGoals);
                           <th className="py-2 pr-3 border-b border-[var(--border)]">Target</th>
                           <th className="py-2 pr-3 border-b border-[var(--border)]">Deadline</th>
                           <th className="py-2 pr-3 border-b border-[var(--border)]">Status</th>
+                          <th className="py-2 pr-3 border-b border-[var(--border)]">Org goal</th>
                           <th className="py-2 pr-3 text-right border-b border-[var(--border)] rounded-tr-xl">Actions</th>
                         </tr>
                       </thead>
@@ -315,6 +318,7 @@ setGoals(normalizedGoals);
                             <td className="py-3 pr-3">{g.measure_type === 'qualitative' ? '—' : fmtMeasure(g.target, g.unit, g.currency_code)}</td>
                             <td className="py-3 pr-3">{g.deadline ? format(parseISO(g.deadline), 'd MMM yyyy') : '—'}</td>
                             <td className="py-3 pr-3"><StatusPill status={g.status} /></td>
+                            <td className="py-3 pr-3"><StatusPill status={g.org_goal_label} /></td>
                             <td className="py-3 pr-3 text-right">
                               {g.measure_type !== 'qualitative' ? (
                                 <button

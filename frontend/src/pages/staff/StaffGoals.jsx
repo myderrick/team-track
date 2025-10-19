@@ -48,7 +48,21 @@ const mapGoals = (rows = []) =>
     target: g.target ?? g.target_value ?? null,
     self_selected: g.self_selected ?? g.meta?.self_selected === true,
     category: g.category ?? g.meta?.category ?? 'other',
+    org_goal_label: g.org_goal_label ?? g.alignment_label ?? null, // 👈 add this
   }));
+
+
+  function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+
+function computeGoalPct(g, latestMap) {
+  if (g.measure_type === 'qualitative') return null;
+  const cur = Number(latestMap[g.id]?.value ?? 0);
+  const tgt = Number(g.target ?? 0);
+  if (!tgt || tgt <= 0) return null;
+  return clamp01(cur / tgt); // 0..1
+}
+
+
 
 export default function StaffGoals() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -114,6 +128,158 @@ export default function StaffGoals() {
       cancel = true;
     };
   }, [quarter]);
+
+
+  const groupedByOrgGoal = useMemo(() => {
+  const groups = new Map(); // key => { label, items:[], pct:0..1|null }
+  const NONE = 'Unaligned';
+
+  (goals || []).forEach((g) => {
+    const key = g.org_goal_label || NONE;
+    if (!groups.has(key)) groups.set(key, { label: key, items: [] });
+    groups.get(key).items.push(g);
+  });
+
+  // compute group progress (average of available %)
+  for (const [, grp] of groups) {
+    const pcts = grp.items
+      .map((g) => computeGoalPct(g, latest))
+      .filter((p) => p !== null && !Number.isNaN(p));
+    grp.progress = pcts.length ? pcts.reduce((a, b) => a + b, 0) / pcts.length : null;
+  }
+
+  // sort: alphabetical, but put Unaligned last
+  const arr = Array.from(groups.values());
+  arr.sort((a, b) => {
+    if (a.label === 'Unaligned') return 1;
+    if (b.label === 'Unaligned') return -1;
+    return a.label.localeCompare(b.label);
+  });
+  return arr;
+}, [goals, latest]);
+function Accordion({ children, className = '' }) {
+  return (
+    <div
+      className={[
+        "rounded-2xl border border-[var(--border)] bg-[var(--card)] p-1",
+        "shadow-sm overflow-hidden", // soft shadow + clean edges
+        className,
+      ].join(' ')}
+    >
+      {children}
+    </div>
+  );
+}
+
+function Chevron({ open }) {
+  return (
+    <svg
+      className={[
+        "w-4 h-4 transition-transform duration-200",
+        open ? "rotate-180" : "rotate-0",
+      ].join(' ')}
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path
+        fillRule="evenodd"
+        d="M5.23 7.21a.75.75 0 011.06.02L10 11.136l3.71-3.905a.75.75 0 011.08 1.04l-4.24 4.46a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z"
+        clipRule="evenodd"
+      />
+    </svg>
+  );
+}
+
+function TinyProgress({ value }) {
+  if (typeof value !== 'number') return null;
+  const pct = Math.round(value * 100);
+  return (
+    <div className="flex items-center gap-2">
+      <div className="w-36 h-1.5 rounded-full bg-[var(--surface)] overflow-hidden">
+        <div
+          className="h-1.5 rounded-full bg-[var(--accent)] transition-[width] duration-300"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className="text-[10px] text-[var(--fg-muted)] tabular-nums">{pct}%</span>
+    </div>
+  );
+}
+
+function HeaderBadge({ children }) {
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium
+      bg-gray-100 text-gray-700 ring-1 ring-inset ring-blue-800
+      dark:bg-gray-800 dark:text-gray-300 dark:ring-gray-700" 
+    >
+      {children}
+    </span>
+  );
+}
+
+function AccordionItem({
+  title,
+  subtitle,
+  progress,
+  children,
+  defaultOpen = false,
+}) {
+  const [open, setOpen] = React.useState(defaultOpen);
+
+  return (
+    <div className="group/acc divide-y divide-[var(--border)] first:rounded-t-2xl last:rounded-b-2xl">
+      {/* Header */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        className={[
+          // surface contrast & subtle gradient
+          "w-full text-left px-4 py-3",
+          "bg-[var(--surface)]/70 hover:bg-[var(--surface)]",
+          "backdrop-blur-[1px]",
+          "mb-2",
+          // "mt-5",
+          // "ml-1",
+          // "mr-1",
+          // layout
+          "flex items-center justify-between gap-4",
+          // border + focus
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] rounded-xl",
+          // improve separation between items
+          "transition-colors",
+        ].join(' ')}
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="font-semibold truncate">{title}</span>
+            {subtitle && (
+              <HeaderBadge>{subtitle}</HeaderBadge>
+            )}
+          </div>
+          <div className="mt-0.5 text-xs text-[var(--fg-muted)] truncate">
+            {open ? "Click to collapse" : "Click to expand"}
+          </div>
+        </div>
+
+        <div className="hidden sm:flex items-center gap-4">
+          <TinyProgress value={progress} />
+          <Chevron open={open} />
+        </div>
+        <div className="sm:hidden">
+          <Chevron open={open} />
+        </div>
+      </button>
+
+      {/* Body */}
+      {open && (
+        <div className="px-4 py-4 bg-[var(--card)]">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
 
   const assignedGoals = useMemo(
     () => (goals || []).filter((g) => g.self_selected !== true),
@@ -357,34 +523,67 @@ export default function StaffGoals() {
             <>
               {toast && <div className="mb-3 text-sm text-green-600">{toast}</div>}
 
-              {/* Assigned (read-only) */}
-              <section className="card p-5 mb-6">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="text-lg font-semibold">Assigned goals</div>
-                </div>
-                {assignedGoals.length === 0 ? (
-                  <EmptyState title="No assigned goals" />
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm">
-                      <thead className="text-left muted">
-                        <tr>
-                          <th className="py-2 pr-3">Goal</th>
-                          <th className="py-2 pr-3">Current</th>
-                          <th className="py-2 pr-3">Target</th>
-                          <th className="py-2 pr-3">Deadline</th>
-                          <th className="py-2 pr-3 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {assignedGoals.map((g) => (
-                          <GoalRow key={g.id} g={g} />
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </section>
+              {/* Aligned to Org Goals (grouped) */}
+<section className="card p-5 mb-6">
+  <div className="flex items-center justify-between mb-3">
+    <div className="text-lg font-semibold">Aligned to Org Goals</div>
+    <div className="text-sm muted">
+      {groupedByOrgGoal.reduce((a, g) => a + g.items.length, 0)} total goals
+    </div>
+  </div>
+
+  {groupedByOrgGoal.length === 0 ? (
+    <EmptyState title="No goals yet" subtitle="Your aligned goals will appear here." />
+  ) : (
+    <Accordion>
+      {groupedByOrgGoal.map((grp, idx) => (
+        <AccordionItem
+          key={grp.label || 'Unaligned'}
+          title={grp.label || 'Unaligned'}
+          subtitle={
+            grp.label === 'Unaligned'
+              ? 'Goals without an org-level alignment'
+              : `${grp.items.length} goal${grp.items.length > 1 ? 's' : ''}`
+          }
+          progress={grp.progress}
+          defaultOpen={idx === 0} // first group open by default
+        >
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="text-left muted">
+                <tr>
+                  <th className="py-2 pr-3">Goal</th>
+                  <th className="py-2 pr-3">Current</th>
+                  <th className="py-2 pr-3">Target</th>
+                  <th className="py-2 pr-3">Deadline</th>
+                  <th className="py-2 pr-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {grp.items
+                  .slice() // safe copy
+                  .sort((a, b) => {
+                    const da = a.deadline || '';
+                    const db = b.deadline || '';
+                    return da.localeCompare(db);
+                  })
+                  .map((g) => (
+                    <GoalRow
+                      key={g.id}
+                      g={g}
+                      onEdit={openEdit}
+                      onDelete={deleteGoal}
+                    />
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </AccordionItem>
+      ))}
+    </Accordion>
+  )}
+</section>
+
 
               {/* My self-created goals by category */}
               {['development', 'learning', 'growth', 'other'].map((cat) => (

@@ -24,6 +24,7 @@ import StaffProfile from '@/pages/staff/StaffProfile';
 
 import '@/index.css';
 import StaffRegister from './pages/staff/Register';
+import ManagerReviewsPage from './pages/ManagerReviews';
 
 export default function App() {
   return (
@@ -58,6 +59,7 @@ export default function App() {
             <Route path="/staff/:employeeId" element={<StaffProfile />} />
             <Route path="/staff/self-review" element={<SelfReview />} />
             <Route path="/staff/goals" element={<StaffGoals />} />
+            <Route path='/manager/reviews' element={<ManagerReviewsPage />} />
            {/* <Route path="/staff/settings" element={<Settings staffMode />} /> */}
           </Route>
 

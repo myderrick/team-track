@@ -29,6 +29,18 @@
     --accent:    #818cf8;       /* indigo-400 */
   }
 
+ html.dark {
+    --bg:        #0b1220;        /* slate-950-ish */
+    --surface:   #1f2937;        /* gray-800 */
+    --card:      #0f172a;        /* slate-900 */
+    --border:    rgba(255,255,255,0.12);
+    --fg:        #e5e7eb;        /* text */
+    --fg-muted:  #9ca3af;
+    color-scheme: dark;
+    --accent:    #818cf8;       /* indigo-400 */
+  }
+
+
   html { font-size: 90%; }
   body {
     font-family: 'Inter', system-ui, sans-serif !important;
@@ -37,11 +49,121 @@
     font-size: 80%;
   }
 
-  .MuiCardContent-root, .MuiPaper-root, .MuiPopover-paper, .MuiTable-root, .MuiTypography-root, .MuiChip-root, .MuiInputBase-root, .MuiList-root, .MuiMenu-paper, .MuiMenuItem-root, .MuiDialog-paper, .MuiDialogContent-root, .MuiTableCell-root {
+  .MuiCardContent-root, .MuiPaper-root, .MuiPopover-paper, .MuiTable-root, .MuiTypography-root, .MuiChip-root, .MuiInputBase-root, .MuiList-root, .MuiMenu-paper, .MuiMenuItem-root, .MuiDialog-paper, .MuiDialogContent-root, .MuiTableCell-root, .MuiBox-root, .MuiButton-root, .MuiTab-root {
     
     font-family: 'Inter', system-ui, sans-serif !important;
     
   }
+
+  /* Button styles */
+    .MuiButton-root {
+        font-family: 'Inter', system-ui, sans-serif !important;
+        font-size: 0.80rem !important;
+        /* 14px */
+        text-transform: none !important;
+        border-radius: 24px !important;
+        /* 12px */
+    }
+    .MuiTab-root {
+        font-family: 'Inter', system-ui, sans-serif !important;
+        font-size: 0.80rem !important;
+        /* 14px */
+        text-transform: none !important;
+        /* 12px */
+    }
+    .MuiTableCell-root {
+        font-family: 'Inter', system-ui, sans-serif !important;
+        font-size: 0.80rem !important;
+        /* 14px */
+        text-transform: none !important;
+        /* 12px */
+    }
+
+    /* Tabs: honor tokens in both themes */
+.MuiTabs-indicator {
+  background-color: var(--accent) !important;
+  height: 3px;
+  border-radius: 3px;
+}
+
+.MuiTab-root {
+  color: var(--fg-muted) !important;     /* unselected */
+  min-height: 40px;
+  text-transform: none !important;
+  font-weight: 600 !important;
+  padding-inline: 16px !important;
+}
+
+.MuiTab-root.Mui-selected {
+  color: var(--fg) !important;           /* selected */
+}
+
+.MuiTab-root.Mui-selected {
+  background-color: color-mix(in oklab, currentColor 14%, transparent);
+}
+
+
+.MuiTab-root.Mui-selected {
+  background-color: color-mix(in oklab, var(--accent) 16%, transparent);
+  color: var(--fg) !important;
+  border-radius: 9999px;
+}
+html.dark .MuiTab-root.Mui-selected {
+  background-color: color-mix(in oklab, var(--accent) 22%, transparent);
+}
+
+/* Mui typography inside tabs dark mode */
+
+html.dark .MuiTab-root.Mui-selected {
+  background-color: color-mix(in oklab, currentColor 26%, transparent);
+}
+.MuiTab-root:hover {
+  background-color: color-mix(in oklab, currentColor 10%, transparent);
+}
+
+html.dark .MuiTab-root:hover {
+  background-color: color-mix(in oklab, currentColor 18%, transparent);
+}
+
+/* Typography defaults */
+.MuiTypography-root { color: var(--fg) !important; }
+.MuiTypography-colorTextSecondary { color: var(--fg-muted) !important; }
+
+/* Paper/Card/Menu/Drawer backgrounds */
+.MuiPaper-root, .MuiMenu-paper, .MuiDialog-paper, .MuiPopover-paper, .MuiDrawer-paper {
+  background-color: var(--card) !important;
+  color: var(--fg) !important;
+  border: 1px solid var(--border);
+}
+
+/* Inputs */
+.MuiOutlinedInput-root {
+  background-color: var(--card);
+  color: var(--fg);
+}
+.MuiOutlinedInput-notchedOutline { border-color: var(--border) !important; }
+.MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline { border-color: var(--fg-muted) !important; }
+.MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline { border-color: var(--accent) !important; }
+.MuiInputLabel-root { color: var(--fg-muted) !important; }
+.MuiInputLabel-root.Mui-focused { color: var(--accent) !important; }
+
+/* Lists / Secondary text */
+.MuiListItemText-secondary { color: var(--fg-muted) !important; }
+
+/* Tooltip */
+.MuiTooltip-tooltip { background: var(--fg) !important; color: var(--card) !important; border: 1px solid var(--border) !important; }
+.MuiTooltip-arrow { color: var(--fg) !important; }
+
+/* Progress + Rating */
+.MuiLinearProgress-root { background: var(--border) !important; }
+.MuiLinearProgress-bar { background: var(--accent) !important; }
+.MuiRating-iconFilled, .MuiRating-iconHover { color: var(--accent) !important; }
+.MuiRating-iconEmpty { color: var(--border) !important; }
+
+/* Divider / Border */
+.MuiDivider-root { border-color: var(--border) !important; }
+
+
 }
 
 @layer components {

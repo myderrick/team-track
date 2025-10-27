@@ -13,6 +13,7 @@ const ORG_ITEMS = [
   { label: 'Settings', href: '/settings', Icon: Cog8ToothIcon },
   { label: 'Goals', href: '/goals', Icon: ClipboardDocumentListIcon },
   { label: 'Goals Tracker', href: '/goalskpitracker', Icon: ChartBarSquareIcon },
+  { label: 'Manager Reviews', href: '/manager/reviews', Icon: ArrowDownLeftIcon },
   { label: 'Performance Reviews', href: '/performancereviews', Icon: ArrowDownLeftIcon },
   { label: 'Directory', href: '/directory', Icon: UserCircleIcon },
   { label: 'Reports', href: '/reports', Icon: ChartBarSquareIcon },
@@ -83,7 +84,7 @@ export default function Sidebar({ variant }) {
         {/* Footer actions */}
         <div className="mt-auto mb-4 px-2">
           {[
-            { label: 'Logout', Icon: ArrowRightEndOnRectangleIcon, onClick: () => {/* wire supabase.auth.signOut() */} },
+            { label: 'Logout', Icon: ArrowRightEndOnRectangleIcon, onClick: () => { supabase.auth.signOut(); } },
             { label: 'Help & Support', Icon: QuestionMarkCircleIcon, onClick: () => {/* open support */} },
           ].map(({ label, Icon, onClick }) => (
             <button

@@ -8,6 +8,7 @@ import EmptyState from '@/components/EmptyState';
 import { supabase } from '@/lib/supabaseClient';
 import { useOrg } from '@/context/OrgContext';
 import UpdateProgressModal from '../../components/UpdateProgressModal';
+import { useNavigate } from 'react-router-dom';
 
 function currentQuarterLabel(d = new Date()) {
   const q = Math.floor(d.getMonth() / 3) + 1;
@@ -50,6 +51,7 @@ const fmtMeasure = (n, unit, currency_code) => {
 export default function StaffDashboard() {
   const { orgId } = useOrg();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const navigate = useNavigate();
 
 
   const quarterOptions = useMemo(() => buildQuarterOptions({ years: 4 }), []);
@@ -229,6 +231,18 @@ setGoals(normalizedGoals);
             <div className="p-6"><EmptyState title="No profile" subtitle="Ask HR to link your account to an employee record." /></div>
           ) : (
             <>
+
+             <div className="flex justify-between items-center mb-4">
+          {/* Button to switch to /dashboard */}
+          <button
+            type="button"
+            onClick={() => navigate("/dashboard")}
+            className="mt-2 inline-flex items-center text-sm px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700"
+          >
+            Switch to Manager Dashboard
+          </button>
+
+          </div>
               {/* Profile strip */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
                 <div className="card p-5">

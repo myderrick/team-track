@@ -13,7 +13,7 @@ const ORG_ITEMS = [
   { label: 'Settings', href: '/settings', Icon: Cog8ToothIcon },
   { label: 'Goals', href: '/goals', Icon: ClipboardDocumentListIcon },
   { label: 'Goals Tracker', href: '/goalskpitracker', Icon: ChartBarSquareIcon },
-  { label: 'Manager Reviews', href: '/manager/reviews', Icon: ArrowDownLeftIcon },
+  { label: 'Manager Reviews', href: '/manager/reviews', Icon: PencilSquareIcon },
   { label: 'Performance Reviews', href: '/performancereviews', Icon: ArrowDownLeftIcon },
   { label: 'Directory', href: '/directory', Icon: UserCircleIcon },
   { label: 'Reports', href: '/reports', Icon: ChartBarSquareIcon },

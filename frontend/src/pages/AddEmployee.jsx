@@ -137,8 +137,12 @@ const [canRotateJoinCode, setCanRotateJoinCode] = useState(false);
 useEffect(() => {
   (async () => {
     if (!orgId) return;
-    const r = await rpcSafe('user_orgs');
-    const rows = Array.isArray(r.data) ? r.data : [];
+ let r = await supabase.rpc('user_orgs'); // public.user_orgs if it exists
+ if (r.error?.code === 'PGRST116' || r.error?.code === 'PGRST202' || /not exist/i.test(r.error?.message || '')) {
+   r = await supabase.schema('app').rpc('user_orgs');
+   console.log('user_orgs row sample:', r.data?.[0]);
+
+ }    const rows = Array.isArray(r.data) ? r.data : [];
     const mine = rows.filter(o => o.is_active && o.organization_id === orgId);
     const roles = mine.map(o => (o.role || '').toLowerCase());
     setCanRotateJoinCode(roles.some(r => r === 'owner' || r === 'admin')); // owner/admin only
@@ -154,8 +158,11 @@ useEffect(() => {
   // Helper: fetch your role in this org (fresh)
   async function getMyOrgRole(p_org_id) {
     try {
-      const r = await rpcSafe('user_orgs'); // returns rows with { organization_id, role, is_active }
-      const rows = Array.isArray(r.data) ? r.data : [];
+  let r = await supabase.rpc('user_orgs');
+   if (r.error) {
+     r = await supabase.schema('app').rpc('user_orgs');
+   }
+   const rows = Array.isArray(r.data) ? r.data : [];
       const mine = rows.find(o => o.is_active && o.organization_id === p_org_id);
       return (mine?.role || '').toLowerCase(); // e.g., 'owner' | 'admin' | 'manager' | 'employee'
     } catch {
@@ -170,6 +177,7 @@ useEffect(() => {
     // 1) Org permission check (owner/admin only)
     // ─────────────────────────────────────────────────────────────
     const myRole = await getMyOrgRole(orgId);
+    console.log('My role in org:', myRole);
     const canManagePeople = ['owner', 'admin'].includes(myRole);
     if (!canManagePeople) {
       throw new Error('You do not have permission to add or invite employees for this organization.');
@@ -192,7 +200,7 @@ useEffect(() => {
     // ─────────────────────────────────────────────────────────────
     // 3) Save employee row (server-side does the real write)
     // ─────────────────────────────────────────────────────────────
-    const { error: saveErr } = await supabase.rpc('app.add_employee_with_org', {
+    const { error: saveErr } = await supabase.schema('app').rpc('add_employee_with_org', {
       p_org_id: orgId,
       p_full_name: form.full_name.trim(),
       p_email: isEmail(form.email) ? form.email.trim() : null,
@@ -200,6 +208,7 @@ useEffect(() => {
       p_department: form.department || null,
       p_location: form.location || null,
       p_start_date: form.start_date || null,
+      p_employee_code: form.employee_id || null,   // 👈 add this
       // p_employee_code: form.employee_id || null, // if your RPC supports it
       p_manager_id: form.manager_id || null,
     });

@@ -200,7 +200,7 @@ useEffect(() => {
     // ─────────────────────────────────────────────────────────────
     // 3) Save employee row (server-side does the real write)
     // ─────────────────────────────────────────────────────────────
-    const { error: saveErr } = await supabase.schema('app').rpc('add_employee_with_org', {
+    const { error: saveErr } = await supabase.rpc('add_employee_with_org', {
       p_org_id: orgId,
       p_full_name: form.full_name.trim(),
       p_email: isEmail(form.email) ? form.email.trim() : null,

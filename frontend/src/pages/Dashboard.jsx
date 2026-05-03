@@ -1,7 +1,9 @@
 // frontend/src/pages/Dashboard.jsx
 import React, {useEffect, useState} from "react";
-import {Plus} from "lucide-react";
-import {useNavigate} from "react-router-dom";
+import {ToggleLeft, ToggleRight} from "lucide-react";
+import { useNavigate} from "react-router-dom";
+import { useLocation as useRouteLocation } from 'react-router-dom';
+
 import {useOrg} from "@/context/OrgContext";
 import StatKpiRow from "../components/StatKpiRow";
 import TopBar from "@/components/TopBar";
@@ -20,6 +22,7 @@ import {useRecentActivity} from "@/hooks/useRecentActivity";
 import AiCoaching from "@/components/AiCoaching";
 import AddWidgetDialog from "@/components/AddWidgetDialog";
 import useSearchParamsState from "@/hooks/useSearchParamsState";
+import StaffDashboard from "./staff/StaffDashboard";
 
 const periodOptions = [
   ...buildQuarterOptions({yearsBack: 0, yearsForward: 0}), // Q1..Q4 of current year
@@ -98,16 +101,55 @@ function periodFromLabel(label, now = new Date()) {
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const {employeeCount, locations, departments, loading} = useOrg();
+  const {
+    employeeCount,
+    locations,
+    departments,
+    loading,
+    myActiveRole,
+    isPrivileged,
+    orgId,
+    myEmployeeId,
+  } = useOrg();
   const [addOpen, setAddOpen] = useState(false);
-  const {orgId} = useOrg();
+  const role = (myActiveRole || "").toLowerCase();
+   const routeLocation = useRouteLocation();     // <-- no clash
+
+  // Default managers into "team" view; others see org
+  const [managerView, setManagerView] = useState(
+    role === "manager" ? "team" : "org"
+  );
+  //  const {orgId} = useOrg();
   const {activities, loading: actLoading} = useRecentActivity({
     orgId,
     limit: 20,
   });
 
+  useEffect(() => {
+    if (role === "manager" && managerView !== "team") setManagerView("team");
+  }, [role]); // eslint-disable-line
+  //  const role = (myActiveRole || '').toLowerCase();
+  //  const isPrivileged = role === 'owner' || role === 'admin' || role === 'manager';
+
+  // 👇 Use a "key" that changes whenever you navigate to /dashboard
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // 👇 Whenever the route changes to /dashboard, bump refreshKey
+useEffect(() => {
+    if (routeLocation.pathname === '/dashboard') {
+      setRefreshKey(k => k + 1);
+    }
+  }, [routeLocation.pathname]);
+  
+
+  // normalize headcount to avoid null logic surprises
+  const headcount = typeof employeeCount === "number" ? employeeCount : 0;
+
   const [view, setView] = useState("individual");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // New: which manager-mode? 'org' (full org widgets) or 'team' (only my direct reports)
+  // const [managerView, setManagerView] = useState('org'); // 'org' | 'team'
 
   // Default to "This Year"
   const [periodLabel, setPeriodLabel] = useState("This Year");
@@ -138,21 +180,31 @@ export default function Dashboard() {
     }
   }, [locations, loading]);
 
+  // While loading, render nothing or a very small shell to prevent flicker
+  if (loading) {
+    return <div className="h-screen bg-[var(--bg)]" />;
+  }
+
+  if (!loading && !isPrivileged) {
+    return <StaffDashboard />; // keep StaffDashboard self-contained (its own top bar/filters)
+  }
+
   return (
+    // If user is only staff/member, show StaffDashboard instead of manager widgets
+
     <>
       <div className="flex h-screen overflow-hidden bg-[var(--bg)] text-[var(--fg)]">
         <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
         <div className="flex-1 flex flex-col">
           <TopBar onMenuClick={() => setSidebarOpen((o) => !o)} />
 
-            
-
           <FilterBar
             title="Dashboard"
             subtitle={
-              period.kind === "year"
+              (managerView === "team" ? "My Team • " : "") +
+              (period.kind === "year"
                 ? `Performance overview for ${period.year}`
-                : `Performance overview for Q${period.quarter} ${period.year}`
+                : `Performance overview for Q${period.quarter} ${period.year}`)
             }
             view={view}
             setView={setView}
@@ -166,9 +218,31 @@ export default function Dashboard() {
             setLocation={setLocation}
             locations={locations}
             onAddWidget={() => setAddOpen(true)}
+            // Optional: right-side action slot to flip manager view
+            rightActions={
+              isPrivileged && myEmployeeId ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setManagerView((v) => (v === "org" ? "team" : "org"))
+                  }
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border"
+                  title={
+                    managerView === "org"
+                      ? "Switch to My Team"
+                      : "Switch to Org view"
+                  }
+                >
+                  {managerView === "org" ? (
+                    <ToggleRight className="w-4 h-4" />
+                  ) : (
+                    <ToggleLeft className="w-4 h-4" />
+                  )}
+                  {managerView === "org" ? "My Team" : "Org View"}
+                </button>
+              ) : null
+            }
           />
-
-          
 
           {/* Empty-state prompt stays the same */}
           {employeeCount === 0 && (
@@ -192,21 +266,21 @@ export default function Dashboard() {
             <div className="mx-auto max-w-7xl w-full">
               {/* KPI header row */}
               <div className="flex justify-between items-center mb-4">
-          {/* Button to switch to /staff/dashboard */}
-          <button
-            type="button"
-            onClick={() => navigate("/staff")}
-            className="mt-2 inline-flex items-center text-sm px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700"
-          >
-            Switch to Staff Dashboard
-          </button>
+                {/* Button to switch to /staff/dashboard */}
+                <button
+                  type="button"
+                  onClick={() => navigate("/staff")}
+                  className="mt-2 inline-flex items-center text-sm px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                >
+                  Switch to Staff Dashboard
+                </button>
+              </div>
 
-          </div>
-
-              {employeeCount > 0 && (
+              {headcount > 0 && (
                 <StatKpiRow
+                  key={refreshKey} // refresh when key changes
                   metrics={{
-                    headcount: employeeCount,
+                    headcount,
                     goalsOnTrackPct: "62%",
                     openAlerts: 3,
                     trendPct: "+8%",
@@ -215,12 +289,17 @@ export default function Dashboard() {
               )}
 
               {view === "individual" ? (
-                employeeCount > 0 ? (
+                headcount > 0 ? (
                   <ErrorBoundary>
                     <IndividualLeaderboard
+                      key={refreshKey} // refresh when key changes
                       period={period}
                       department={department}
                       location={location}
+                      restrictToManager={managerView === "team"}
+                      managerEmployeeId={
+                        managerView === "team" ? myEmployeeId : null
+                      }
                     />
                   </ErrorBoundary>
                 ) : (
@@ -237,8 +316,9 @@ export default function Dashboard() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6 items-stretch">
                     <div className="h-full">
-                      {employeeCount > 0 ? (
+                      {headcount > 0 ? (
                         <TeamPerformanceChart
+                          key={refreshKey} // refresh when key changes
                           period={period}
                           department={department}
                           location={location}
@@ -251,7 +331,7 @@ export default function Dashboard() {
                       )}
                     </div>
                     <div className="h-full">
-                      {employeeCount > 0 ? (
+                      {headcount > 0 ? (
                         <GoalProgress
                           period={period}
                           department={department}

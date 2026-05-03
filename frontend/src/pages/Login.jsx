@@ -118,7 +118,7 @@ const isOwner   = roles.includes('owner');
 const isAdmin   = roles.includes('admin');
 const isManager = roles.includes('manager');
 const isPrivileged = isOwner || isAdmin || isManager; // 🔒 privileged means dashboard
-
+const isStaff  = roles.includes('staff') || roles.includes('member');
 const isAnyMember = activeOrgs.length > 0;
 
 // 2) Employee link(s) (staff) for this user
@@ -141,8 +141,10 @@ let dest = '/onboarding';
 
 if (isPrivileged) {
   dest = '/dashboard';
-} else if (hasStaff) {
-  dest = '/staff';
+
+} 
+ else if (isStaff) {
+ dest = '/dashboard'; // always go to one dashboard route
 } else if (isAnyMember) {
   dest = from;
 } else {

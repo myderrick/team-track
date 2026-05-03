@@ -362,9 +362,9 @@ const [form, setForm] = useState({
   department: ''
 });
 
-// load alignment options whenever org or form opens
+// load alignment options as soon as we know the org, so edit can resolve them
 useEffect(() => {
-  if (!orgId || !showForm) return;
+  if (!orgId) return;
   (async () => {
     setAlignmentLoading(true);
     const { data, error } = await supabase
@@ -373,7 +373,17 @@ useEffect(() => {
     setAlignmentOptions(error ? [] : (data || []));
     setAlignmentLoading(false);
   })();
-}, [orgId, showForm]);
+}, [orgId]);
+
+async function fetchAlignmentOptions() {
+  if (!orgId) return [];
+  const { data, error } = await supabase
+    .schema('public')
+    .rpc('org_goal_options', { p_org_id: orgId });
+  const opts = error ? [] : (data || []);
+  setAlignmentOptions(opts);
+  return opts;
+}
 
 // helper to upsert new alignment then refresh and select it
 async function createAlignmentAndSelect(label) {
@@ -580,7 +590,7 @@ const alignment_label = form.alignmentObj?.label || 'None';
     setShowForm(false);
     setForm({
       title: '', description: '', deadline: '',
-      alignment: [], assignees: [],
+      alignmentObj: NONE_ALIGN, assignees: [],
       measureType: '', measureValue: '', measureCurrency: '', measureUnit: '', measureFrequency: '',
       department: ''
     });
@@ -593,10 +603,13 @@ const alignment_label = form.alignmentObj?.label || 'None';
     setShowForm(true);
     setFormQuarter(goal.quarter || currentQuarterLabel());
 
-    const { data: assigns } = await supabase.schema('app')
-      .from('goal_assignments').select('employee_id').eq('goal_id', goal.id);
+    const [assignsRes, opts] = await Promise.all([
+      supabase.schema('app')
+        .from('goal_assignments').select('employee_id').eq('goal_id', goal.id),
+      alignmentOptions.length ? Promise.resolve(alignmentOptions) : fetchAlignmentOptions(),
+    ]);
 
-    const assigned = (assigns || []).map(a => {
+    const assigned = (assignsRes.data || []).map(a => {
       const emp = employees.find(e => String(e.id) === String(a.employee_id));
       return emp ? { id: emp.id, label: emp.full_name } : null;
     }).filter(Boolean);
@@ -607,27 +620,30 @@ const alignment_label = form.alignmentObj?.label || 'None';
       if (owner) defaultAssignees = [{ id: owner.id, label: owner.full_name }];
     }
 
-    // Find alignment from goal.org_goal_id or meta.alignment_label
-  let alignmentObj = { id: null, label: 'None', scope: '—' };
-  if (goal.org_goal_id && alignmentOptions.length) {
-    const hit = alignmentOptions.find(o => String(o.id) === String(goal.org_goal_id));
-    if (hit) alignmentObj = hit;
-  } else if (goal.meta?.alignment_label && alignmentOptions.length) {
-    const hit = alignmentOptions.find(o => o.label.toLowerCase() === goal.meta.alignment_label.toLowerCase());
-    if (hit) alignmentObj = hit;
-  }
+    let alignmentObj = NONE_ALIGN;
+    const meta = safeJson(goal.meta);
+    if (goal.org_goal_id) {
+      const hit = opts.find(o => String(o.id) === String(goal.org_goal_id));
+      if (hit) alignmentObj = hit;
+    }
+    if (alignmentObj === NONE_ALIGN && (meta.alignment_label || goal.alignment_label)) {
+      const label = (meta.alignment_label || goal.alignment_label).toLowerCase();
+      const hit = opts.find(o => (o.label || '').toLowerCase() === label);
+      if (hit) alignmentObj = hit;
+    }
 
     setForm(f => ({
       ...f,
       title: goal.title,
       description: goal.description || '',
-      deadline: goal.deadline || '',
+      deadline: goal.deadline ? String(goal.deadline).slice(0, 10) : '',
+      alignmentObj,
       assignees: defaultAssignees,
       measureType: goal.measure_type || 'numeric',
       measureValue: String(goal.target ?? ''),
       measureCurrency: goal.currency_code || 'GHS',
       measureUnit: goal.unit || '',
-      measureFrequency: '',
+      measureFrequency: meta.measure_frequency || '',
       department: goal.department || ''
     }));
   }

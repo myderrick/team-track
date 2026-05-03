@@ -121,7 +121,13 @@ function normalizeMetricsRow(row) {
 }
 
 // ---------- component ----------
-export default function IndividualLeaderboard({ period = 'All', department, location }) {
+export default function IndividualLeaderboard({
+  period = 'All',
+  department,
+location,
+  restrictToManager = false,
+  managerEmployeeId = null,
+}) {
   const { orgId } = useOrg();
   const [rows, setRows] = useState([]);
   const [metricsByEmp, setMetricsByEmp] = useState({});
@@ -132,6 +138,7 @@ export default function IndividualLeaderboard({ period = 'All', department, loca
 
   const { rpc: periodRpc, label: periodLabel } = useMemo(() => normalizePeriodInput(period), [period]);
   const periodKey = typeof period === 'string' ? period : JSON.stringify(period ?? {});
+console.log('[Leaderboard] restrictToManager:', restrictToManager, 'managerEmployeeId:', managerEmployeeId);
 
   // Load employees
   useEffect(() => {
@@ -139,36 +146,54 @@ export default function IndividualLeaderboard({ period = 'All', department, loca
     (async () => {
       setLoading(true);
       if (!orgId) return setLoading(false);
-      const { data, error } = await rpcSafe('org_employees', { p_org_id: orgId });
-      if (cancelled) return;
+  const rpcName = restrictToManager ? 'org_employees_my_reports' : 'org_employees';
+  const args    = { p_org_id: orgId };
+
+      console.log('[Leaderboard] calling', rpcName, args); // ✅ verify!
+
+        const { data, error } = await rpcSafe(rpcName, args);
+     if (cancelled) return;
       if (error) setError(error.message);
       else setRows(Array.isArray(data) ? data : []);
       setLoading(false);
     })();
     return () => (cancelled = true);
-  }, [orgId]);
+  }, [orgId, restrictToManager]);
 
   const employees = useMemo(
     () =>
       (rows || []).filter((e) => {
         if (department && department !== 'All Departments' && e.department !== department) return false;
         if (location && location !== 'All Locations' && e.location !== location) return false;
+        if (restrictToManager) {
+     // If the RPC is correct this is redundant, but keep as safety net:
+       // On your org_employees_my_reports result, every row must have manager_employee_id not null.
+       const mgr = String(e.manager_employee_id ?? e.manager_id ?? '');
+       if (!mgr) return false;
+     }
         return true;
       }),
-    [rows, department, location]
+   [rows, department, location, restrictToManager]
+
+   
   );
+
+ 
+
+
+const employeeIds = useMemo(() => employees.map(e => String(e.id)), [employees]);
+const employeeIdsKey = useMemo(() => employeeIds.join(','), [employeeIds]);
 
   // Load metrics
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setMetricsLoading(true);
-      if (!orgId || !employees.length) return setMetricsLoading(false);
+if (!orgId || !employeeIds.length) return setMetricsLoading(false);
       const { data, error } = await rpcSafe('manager_individual_metrics', {
         p_org_id: orgId,
         p_period: periodRpc,
-        p_employee_ids: employees.map((e) => e.id),
-      });
+ p_employee_ids: employeeIds,      });
       if (cancelled) return;
       if (error) setMetricsError(error.message);
       else {
@@ -179,7 +204,7 @@ export default function IndividualLeaderboard({ period = 'All', department, loca
       setMetricsLoading(false);
     })();
     return () => (cancelled = true);
-  }, [orgId, periodKey, employees]);
+  }, [orgId, periodKey, employeeIdsKey]);
 
   // ---------- Loading & Error states ----------
   if (loading)

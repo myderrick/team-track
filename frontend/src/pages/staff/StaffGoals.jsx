@@ -29,6 +29,13 @@ const CATEGORIES = [
   { value: 'other', label: 'Other Goal' },
 ];
 
+const SUB_GOAL_STATUS_LABELS = {
+  not_started: 'Not started',
+  in_progress: 'In progress',
+  completed: 'Completed',
+  blocked: 'Blocked',
+};
+
 const currencySymbol = (code) =>
   ({ USD: '$', EUR: '€', GBP: '£', GHS: 'GH₵' }[(code || '').toUpperCase()] || '');
 
@@ -48,8 +55,30 @@ const mapGoals = (rows = []) =>
     target: g.target ?? g.target_value ?? null,
     self_selected: g.self_selected ?? g.meta?.self_selected === true,
     category: g.category ?? g.meta?.category ?? 'other',
+    sub_goals: g.sub_goals || [],
     org_goal_label: g.org_goal_label ?? g.alignment_label ?? null, // 👈 add this
   }));
+
+async function attachSubGoals(rows = []) {
+  let mappedGoals = mapGoals(rows);
+  const goalIds = mappedGoals.map(g => g.id).filter(Boolean);
+  if (!goalIds.length) return mappedGoals;
+
+  const { data, error } = await supabase
+    .schema('app')
+    .from('goal_sub_goals')
+    .select('id, goal_id, title, description, assignee_employee_id, due_date, status, sort_order')
+    .in('goal_id', goalIds)
+    .order('sort_order', { ascending: true });
+
+  if (error) return mappedGoals;
+
+  const byGoal = (data || []).reduce((acc, row) => {
+    (acc[row.goal_id] ||= []).push(row);
+    return acc;
+  }, {});
+  return mappedGoals.map(g => ({ ...g, sub_goals: byGoal[g.id] || [] }));
+}
 
 
   function clamp01(x) { return Math.max(0, Math.min(1, x)); }
@@ -65,7 +94,7 @@ function computeGoalPct(g, latestMap) {
 
 
 export default function StaffGoals() {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [, setSidebarOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('darkMode');
     return saved !== null
@@ -109,7 +138,8 @@ export default function StaffGoals() {
         if (error) throw error;
 
         setMe(data?.me || null);
-        setGoals(mapGoals(data?.goals || []));
+
+        setGoals(await attachSubGoals(data?.goals || []));
 
         const latestMap = Object.fromEntries(
           (data?.latest_measurements || []).map((m) => [
@@ -281,11 +311,6 @@ function AccordionItem({
   );
 }
 
-  const assignedGoals = useMemo(
-    () => (goals || []).filter((g) => g.self_selected !== true),
-    [goals]
-  );
-
   const myGoalsByCategory = useMemo(() => {
     const out = { development: [], learning: [], growth: [], other: [] };
     (goals || [])
@@ -373,7 +398,7 @@ function AccordionItem({
       setShowEditor(false);
       // refresh
       const { data } = await supabase.schema('public').rpc('my_dashboard', { p_quarter: quarter });
-      setGoals(mapGoals(data?.goals || []));
+      setGoals(await attachSubGoals(data?.goals || []));
     } catch (e) {
       setErr(String(e.message || e));
     } finally {
@@ -397,7 +422,7 @@ function AccordionItem({
       const { data } = await supabase
         .schema('public')
         .rpc('my_dashboard', { p_quarter: quarter });
-      setGoals(mapGoals(data?.goals || []));
+      setGoals(await attachSubGoals(data?.goals || []));
     } catch (e) {
       setErr(String(e.message || e));
     } finally {
@@ -426,6 +451,28 @@ function AccordionItem({
           </div>
           {!!g.description && (
             <div className="text-xs muted line-clamp-1">{g.description}</div>
+          )}
+          {g.sub_goals?.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <span className="text-[11px] muted mr-1">
+                {g.sub_goals.filter(s => s.status === 'completed').length}/{g.sub_goals.length} sub-goals
+              </span>
+              {g.sub_goals.slice(0, 3).map((subGoal) => (
+                <span
+                  key={subGoal.id}
+                  title={subGoal.title}
+                  className="inline-flex max-w-[220px] items-center gap-1 rounded-full border border-[var(--border)] px-2 py-0.5 text-[11px]"
+                >
+                  <span className="truncate">{subGoal.title}</span>
+                  <span className="muted whitespace-nowrap">
+                    {SUB_GOAL_STATUS_LABELS[subGoal.status] || subGoal.status}
+                  </span>
+                </span>
+              ))}
+              {g.sub_goals.length > 3 && (
+                <span className="text-[11px] muted">+{g.sub_goals.length - 3} more</span>
+              )}
+            </div>
           )}
         </td>
         <td className="py-2 pr-3">

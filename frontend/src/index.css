@@ -13,7 +13,7 @@
     --fg:        #0f172a;        /* text */
     --fg-muted:  #475569;
     color-scheme: light;
-    --accent:    #6366f1;       /* indigo-500 */
+    --accent:    #0f766e;       /* teal-600 */
     --sidebar-w: 4rem;          /* set by SidebarPinProvider; default = collapsed */
   }
 
@@ -27,7 +27,7 @@
     --fg:        #e5e7eb;        /* text */
     --fg-muted:  #9ca3af;
     color-scheme: dark;
-    --accent:    #818cf8;       /* indigo-400 */
+    --accent:    #2dd4bf;       /* teal-400 */
   }
 
  html.dark {

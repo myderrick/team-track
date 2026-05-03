@@ -21,6 +21,12 @@ import '@/index.css';
 
 const measurementUnits = ['%', 'points', 'calls', 'sessions', 'customers', 'tasks', 'leads', 'sales', 'units', 'hours'];
 const currencies = ['USD', 'EUR', 'GBP', 'GHS'];
+const subGoalStatuses = [
+  { value: 'not_started', label: 'Not started' },
+  { value: 'in_progress', label: 'In progress' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'blocked', label: 'Blocked' },
+];
 
 // ---------- helpers ----------
 function safeJson(v, fallback = {}) {
@@ -60,6 +66,37 @@ function normalizeGoalRow(r) {
      org_goal_id: r.org_goal_id ?? r.goal_org_goal_id ?? null,               // NEW
     alignment_label: meta.alignment_label || r.alignment_label || null,     // NEW
   };
+}
+
+function emptySubGoal() {
+  return {
+    title: '',
+    description: '',
+    assignee: null,
+    due_date: '',
+    status: 'not_started',
+  };
+}
+
+function normalizeSubGoalRow(r, employees = []) {
+  const assignee = employees.find(e => String(e.id) === String(r.assignee_employee_id));
+  return {
+    id: r.id,
+    title: r.title || '',
+    description: r.description || '',
+    assignee: assignee ? { id: assignee.id, label: assignee.full_name } : null,
+    assignee_employee_id: r.assignee_employee_id || null,
+    assignee_name: assignee?.full_name || null,
+    due_date: r.due_date ? String(r.due_date).slice(0, 10) : '',
+    status: r.status || 'not_started',
+    sort_order: r.sort_order ?? 0,
+  };
+}
+
+function subGoalSummary(subGoals = []) {
+  if (!subGoals.length) return null;
+  const completed = subGoals.filter(s => s.status === 'completed').length;
+  return `${completed}/${subGoals.length} sub-goals complete`;
 }
 
 const currencySymbol = (code) =>
@@ -286,7 +323,7 @@ function MeasurePill({ g }) {
 
 export default function GoalsPage() {
   const { orgId } = useOrg();
-  const { darkMode, toggleDark } = useDarkMode(); // from your provider
+  const { darkMode } = useDarkMode(); // from your provider
   const muiTheme = useMuiTheme(darkMode);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -357,6 +394,7 @@ const [form, setForm] = useState({
   title: '', description: '', deadline: '',
   alignmentObj: NONE_ALIGN,            // <-- single select object
   assignees: [],
+  subGoals: [emptySubGoal()],
   measureType: '',
   measureValue: '', measureCurrency: '', measureUnit: '', measureFrequency: '',
   department: ''
@@ -449,16 +487,16 @@ if (gRes.error) {
     const baseGoals     = gRes.error ? [] : (gRes.data || []);
     let normalized      = baseGoals.map(normalizeGoalRow);
 
-    // Backfill missing deadline/quarter from app.goals when needed
+    // Backfill fields that older catalog RPCs may omit.
     const idsNeedingBackfill = normalized
-      .filter(g => (!g.deadline || !g.quarter) && g.id)
+      .filter(g => (!g.deadline || !g.quarter || !g.description) && g.id)
       .map(g => g.id);
 
     if (idsNeedingBackfill.length > 0) {
       const bf = await supabase
         .schema('app')
         .from('goals')
-        .select('id, deadline, quarter')
+        .select('id, deadline, quarter, description')
         .in('id', idsNeedingBackfill);
 
       if (!bf.error && bf.data) {
@@ -470,6 +508,7 @@ if (gRes.error) {
             ...g,
             deadline: g.deadline || hit.deadline || null,
             quarter: g.quarter || hit.quarter || null,
+            description: g.description || hit.description || '',
           };
         });
       }
@@ -505,8 +544,24 @@ if (gRes.error) {
       return { ...g, assignees: [] };
     });
 
+    const goalIds = withAssignees.map(g => g.id).filter(Boolean);
+    let subGoalsByGoal = {};
+    if (goalIds.length) {
+      const sgRes = await supabase.schema('app')
+        .from('goal_sub_goals')
+        .select('id, goal_id, title, description, assignee_employee_id, due_date, status, sort_order')
+        .in('goal_id', goalIds)
+        .order('sort_order', { ascending: true });
+
+      const subGoals = sgRes.error ? [] : (sgRes.data || []);
+      subGoalsByGoal = subGoals.reduce((acc, r) => {
+        (acc[r.goal_id] ||= []).push(normalizeSubGoalRow(r, employeesData));
+        return acc;
+      }, {});
+    }
+
     setEmployees(employeesData);
-    setRows(withAssignees);
+    setRows(withAssignees.map(g => ({ ...g, sub_goals: subGoalsByGoal[g.id] || [] })));
     setErr(eRes.error?.message || gRes.error?.message || '');
     setLoading(false);
   }
@@ -532,6 +587,33 @@ if (gRes.error) {
   }, [rows, search]);
 
   console.log('render', { rows, filteredRows });  
+
+  async function persistSubGoals(goalId) {
+    const cleanRows = (form.subGoals || [])
+      .map((s, index) => ({
+        goal_id: goalId,
+        title: (s.title || '').trim(),
+        description: (s.description || '').trim() || null,
+        assignee_employee_id: s.assignee?.id || null,
+        due_date: s.due_date || null,
+        status: s.status || 'not_started',
+        sort_order: index,
+      }))
+      .filter(s => s.title);
+
+    const deleteRes = await supabase.schema('app')
+      .from('goal_sub_goals')
+      .delete()
+      .eq('goal_id', goalId);
+    if (deleteRes.error) throw deleteRes.error;
+
+    if (cleanRows.length) {
+      const insertRes = await supabase.schema('app')
+        .from('goal_sub_goals')
+        .insert(cleanRows);
+      if (insertRes.error) throw insertRes.error;
+    }
+  }
 
   async function handleSave() {
     setErr('');
@@ -568,22 +650,31 @@ const alignment_label = form.alignmentObj?.label || 'None';
     measure_frequency: form.measureFrequency || null,
   },
 };
-    if (editingId) {
-      const { error } = await supabase.schema('app').from('goals').update(payload).eq('id', editingId);
-      if (error) { setErr(error.message); return; }
-      await supabase.schema('app').from('goal_assignments').delete().eq('goal_id', editingId);
-      if (form.assignees.length > 0) {
-        const rows = form.assignees.map(a => ({ goal_id: editingId, employee_id: a.id }));
-        await supabase.schema('app').from('goal_assignments').insert(rows);
+    try {
+      if (editingId) {
+        const { error } = await supabase.schema('app').from('goals').update(payload).eq('id', editingId);
+        if (error) throw error;
+        await supabase.schema('app').from('goal_assignments').delete().eq('goal_id', editingId);
+        if (form.assignees.length > 0) {
+          const rows = form.assignees.map(a => ({ goal_id: editingId, employee_id: a.id }));
+          const { error: assignError } = await supabase.schema('app').from('goal_assignments').insert(rows);
+          if (assignError) throw assignError;
+        }
+        await persistSubGoals(editingId);
+      } else {
+        const { data, error } = await supabase.schema('app').from('goals').insert(payload).select('id').single();
+        if (error) throw error;
+        const goalId = data.id;
+        if (form.assignees.length > 0) {
+          const rows = form.assignees.map(a => ({ goal_id: goalId, employee_id: a.id }));
+          const { error: assignError } = await supabase.schema('app').from('goal_assignments').insert(rows);
+          if (assignError) throw assignError;
+        }
+        await persistSubGoals(goalId);
       }
-    } else {
-      const { data, error } = await supabase.schema('app').from('goals').insert(payload).select('id').single();
-      if (error) { setErr(error.message); return; }
-      const goalId = data.id;
-      if (form.assignees.length > 0) {
-        const rows = form.assignees.map(a => ({ goal_id: goalId, employee_id: a.id }));
-        await supabase.schema('app').from('goal_assignments').insert(rows);
-      }
+    } catch (error) {
+      setErr(error.message);
+      return;
     }
 
     setEditingId(null);
@@ -591,6 +682,7 @@ const alignment_label = form.alignmentObj?.label || 'None';
     setForm({
       title: '', description: '', deadline: '',
       alignmentObj: NONE_ALIGN, assignees: [],
+      subGoals: [emptySubGoal()],
       measureType: '', measureValue: '', measureCurrency: '', measureUnit: '', measureFrequency: '',
       department: ''
     });
@@ -639,6 +731,7 @@ const alignment_label = form.alignmentObj?.label || 'None';
       deadline: goal.deadline ? String(goal.deadline).slice(0, 10) : '',
       alignmentObj,
       assignees: defaultAssignees,
+      subGoals: goal.sub_goals?.length ? goal.sub_goals : [emptySubGoal()],
       measureType: goal.measure_type || 'numeric',
       measureValue: String(goal.target ?? ''),
       measureCurrency: goal.currency_code || 'GHS',
@@ -677,8 +770,23 @@ const alignment_label = form.alignmentObj?.label || 'None';
             <Box sx={{ maxWidth: 1200, mx: 'auto', display: 'flex', flexDirection: 'column', gap: 3 }}>
               {/* Form Card */}
               <Card sx={{ p: 0 }}>
+                {showForm && editingId && (
+                  <Box
+                    onClick={() => { setEditingId(null); setShowForm(false); }}
+                    sx={{
+                      position: 'fixed',
+                      inset: 0,
+                      zIndex: 1298,
+                      bgcolor: 'rgba(2, 6, 23, 0.55)',
+                      backdropFilter: 'blur(2px)',
+                    }}
+                  />
+                )}
                 <Box
-                  onClick={() => setShowForm(f => !f)}
+                  onClick={() => {
+                    if (editingId) return;
+                    setShowForm(f => !f);
+                  }}
                   sx={{
                     display: 'flex',
                     alignItems: 'center',
@@ -715,10 +823,88 @@ const alignment_label = form.alignmentObj?.label || 'None';
                 </Box>
 
                 {showForm && (
-                <CardContent sx={{ pt: 3 }}>
-  <Typography variant="subtitle2" color="text.secondary" mb={3}>
+                <CardContent
+                  sx={{
+                    p: 0,
+                    pb: 0,
+                    '& > .MuiTypography-subtitle2': {
+                      display: 'block',
+                      px: { xs: 2, md: 3 },
+                      pt: 2.5,
+                      mb: 2,
+                    },
+                    '& > .MuiTypography-overline': {
+                      display: 'block',
+                      mx: { xs: 2, md: 3 },
+                      mt: 2,
+                      mb: 1,
+                      fontWeight: 800,
+                      letterSpacing: 0.8,
+                    },
+                    '& > .MuiBox-root:not(:first-child)': {
+                      mx: { xs: 2, md: 3 },
+                    },
+                    '& > .MuiDivider-root': {
+                      mx: { xs: 2, md: 3 },
+                      my: 2,
+                    },
+                    '& .MuiTextField-root .MuiInputBase-root, & .MuiFormControl-root .MuiInputBase-root': {
+                      borderRadius: 2,
+                    },
+                    '& .MuiFormHelperText-root': {
+                      mx: 0,
+                    },
+                    ...(editingId ? {
+                      position: 'fixed',
+                      zIndex: 1299,
+                      top: { xs: 64, md: 76 },
+                      left: { xs: 16, md: '50%' },
+                      right: { xs: 16, md: 'auto' },
+                      transform: { xs: 'none', md: 'translateX(-50%)' },
+                      width: { xs: 'auto', md: 'min(1040px, calc(100vw - 56px))' },
+                      maxHeight: 'calc(100vh - 96px)',
+                      overflowY: 'auto',
+                      bgcolor: 'var(--card)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 3,
+                      boxShadow: '0 28px 90px rgba(2, 6, 23, 0.38)',
+                    } : {}),
+                  }}
+                >
+                  {editingId && (
+                    <Box
+                      sx={{
+                        position: 'sticky',
+                        top: 0,
+                        zIndex: 2,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 2,
+                        px: { xs: 2, md: 3 },
+                        py: 2,
+                        mb: 2,
+                        bgcolor: 'color-mix(in oklab, var(--card) 94%, transparent)',
+                        borderBottom: '1px solid var(--border)',
+                        backdropFilter: 'blur(12px)',
+                      }}
+                    >
+                      <Box>
+                        <Typography variant="h6" fontWeight={700}>Edit Goal</Typography>
+                        <Typography variant="body2" color="text.secondary">Update the goal details, assignments, and sub-goals.</Typography>
+                      </Box>
+                      <IconButton
+                        size="small"
+                        onClick={() => { setEditingId(null); setShowForm(false); }}
+                        sx={{ color: 'var(--fg-muted)' }}
+                      >
+                        <Minus style={{ width: 20, height: 20 }} />
+                      </IconButton>
+                    </Box>
+                  )}
+  {!editingId && <Typography variant="subtitle2" color="text.secondary" mb={3}>
     Enter clear, actionable details for your goal.
-  </Typography>
+  </Typography>}
 
   {/* BASICS */}
   <Typography variant="overline" sx={{ color: 'var(--fg-muted)' }}>Basics</Typography>
@@ -953,8 +1139,170 @@ const alignment_label = form.alignmentObj?.label || 'None';
     />
   </Box>
 
+  <Divider sx={{ my: 3 }} />
+
+  <Box
+    component="details"
+    open={(form.subGoals || []).some(s => s.title || s.description || s.assignee || s.due_date)}
+    sx={{
+      border: '1px solid var(--border)',
+      borderRadius: 1,
+      bgcolor: 'color-mix(in oklab, var(--surface) 72%, transparent)',
+      '& summary': { listStyle: 'none' },
+      '& summary::-webkit-details-marker': { display: 'none' },
+    }}
+  >
+    <Box
+      component="summary"
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 2,
+        px: 1.5,
+        py: 1.25,
+        cursor: 'pointer',
+      }}
+    >
+      <Box>
+        <Typography variant="overline" sx={{ color: 'var(--fg-muted)' }}>Sub-goals</Typography>
+        <Typography variant="body2" color="text.secondary">
+          Break this goal into milestones staff can update during review.
+        </Typography>
+      </Box>
+      <Chip
+        size="small"
+        variant="outlined"
+        label={`${(form.subGoals || []).filter(s => s.title?.trim()).length} added`}
+      />
+    </Box>
+
+    <Divider />
+
+    <Box sx={{ p: 1.5, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+      {(form.subGoals || []).map((subGoal, index) => (
+        <Box
+          key={subGoal.id || index}
+          sx={{
+            p: 1.5,
+            border: '1px solid var(--border)',
+            borderRadius: 1,
+            bgcolor: 'var(--card)',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+            <Typography variant="subtitle2" sx={{ flex: 1 }}>
+              Milestone {index + 1}
+            </Typography>
+            <Tooltip title="Remove sub-goal">
+              <span>
+                <IconButton
+                  color="error"
+                  size="small"
+                  onClick={() => setForm(f => {
+                    const next = (f.subGoals || []).filter((_, i) => i !== index);
+                    return { ...f, subGoals: next.length ? next : [emptySubGoal()] };
+                  })}
+                >
+                  <Delete fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Box>
+
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.5fr 1fr' }, gap: 1.5 }}>
+            <TextField
+              label="Sub-goal title"
+              value={subGoal.title}
+              onChange={(e) => setForm(f => ({
+                ...f,
+                subGoals: (f.subGoals || []).map((s, i) => i === index ? { ...s, title: e.target.value } : s),
+              }))}
+              size="small"
+              fullWidth
+            />
+            <Autocomplete
+              options={assigneeOptions}
+              getOptionLabel={(o) => o.label}
+              value={subGoal.assignee || null}
+              onChange={(_, value) => setForm(f => ({
+                ...f,
+                subGoals: (f.subGoals || []).map((s, i) => i === index ? { ...s, assignee: value } : s),
+              }))}
+              renderInput={(params) => <TextField {...params} label="Owner" size="small" />}
+            />
+            <TextField
+              label="Description"
+              value={subGoal.description}
+              onChange={(e) => setForm(f => ({
+                ...f,
+                subGoals: (f.subGoals || []).map((s, i) => i === index ? { ...s, description: e.target.value } : s),
+              }))}
+              size="small"
+              fullWidth
+              multiline
+              minRows={2}
+              sx={{ gridColumn: { xs: 'auto', md: '1 / -1' } }}
+            />
+            <TextField
+              label="Due date"
+              type="date"
+              value={subGoal.due_date || ''}
+              onChange={(e) => setForm(f => ({
+                ...f,
+                subGoals: (f.subGoals || []).map((s, i) => i === index ? { ...s, due_date: e.target.value } : s),
+              }))}
+              InputLabelProps={{ shrink: true }}
+              size="small"
+              fullWidth
+            />
+            <FormControl fullWidth size="small">
+              <InputLabel>Status</InputLabel>
+              <Select
+                label="Status"
+                value={subGoal.status || 'not_started'}
+                onChange={(e) => setForm(f => ({
+                  ...f,
+                  subGoals: (f.subGoals || []).map((s, i) => i === index ? { ...s, status: e.target.value } : s),
+                }))}
+                MenuProps={menuProps}
+              >
+                {subGoalStatuses.map(s => <MenuItem key={s.value} value={s.value}>{s.label}</MenuItem>)}
+              </Select>
+            </FormControl>
+          </Box>
+        </Box>
+      ))}
+
+      <Button
+        size="small"
+        variant="outlined"
+        startIcon={<Plus style={{ width: 16, height: 16 }} />}
+        onClick={() => setForm(f => ({ ...f, subGoals: [...(f.subGoals || []), emptySubGoal()] }))}
+        sx={{ alignSelf: 'flex-start' }}
+      >
+        Add another sub-goal
+      </Button>
+    </Box>
+  </Box>
+
   {/* ACTIONS */}
-  <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1.5, mt: 3 }}>
+  <Box sx={{
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: 1.5,
+    mt: 3,
+    ...(editingId ? {
+      position: 'sticky',
+      bottom: 0,
+      zIndex: 2,
+      px: { xs: 2, md: 3 },
+      py: 2,
+      bgcolor: 'color-mix(in oklab, var(--card) 94%, transparent)',
+      borderTop: '1px solid var(--border)',
+      backdropFilter: 'blur(12px)',
+    } : {}),
+  }}>
     <Button variant="outlined" onClick={() => { setEditingId(null); setShowForm(false); }}>
       Cancel
     </Button>
@@ -1044,6 +1392,28 @@ const alignment_label = form.alignmentObj?.label || 'None';
     >
       {g.description}
     </Typography>
+  )}
+
+  {g.sub_goals?.length > 0 && (
+    <Box mt={1} sx={{ display: 'flex', gap: 0.75, alignItems: 'center', flexWrap: 'wrap' }}>
+      <Chip size="small" variant="outlined" label={subGoalSummary(g.sub_goals)} />
+      {g.sub_goals.slice(0, 2).map(s => (
+        <Chip
+          key={s.id || s.title}
+          size="small"
+          label={s.title}
+          sx={{
+            maxWidth: 180,
+            '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' },
+          }}
+        />
+      ))}
+      {g.sub_goals.length > 2 && (
+        <Tooltip title={g.sub_goals.slice(2).map(s => s.title).join(', ')}>
+          <Chip size="small" variant="outlined" label={`+${g.sub_goals.length - 2} more`} />
+        </Tooltip>
+      )}
+    </Box>
   )}
 
   {(g.assignees?.length ?? 0) > 0 && (

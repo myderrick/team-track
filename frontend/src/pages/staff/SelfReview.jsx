@@ -19,6 +19,14 @@ const isFnMissing = (errOrRes) => {
   return FN_MISSING_RE.test(msg);
 };
 
+const SUB_GOAL_STATUS_LABELS = {
+  not_started: 'Not started',
+  in_progress: 'In progress',
+  completed: 'Completed',
+  blocked: 'Blocked',
+};
+const SUB_GOAL_STATUS_OPTIONS = Object.entries(SUB_GOAL_STATUS_LABELS);
+
 
 function currentQuarterLabel(d = new Date()) {
   const q = Math.floor(d.getMonth() / 3) + 1;
@@ -51,10 +59,25 @@ async function getLatestProgress(ids, quarter) {
   }
   return r;
 }
-function pct(value, target) {
-  if (!target || target <= 0 || value == null) return null;
-  const p = Math.max(0, Math.min(1, Number(value) / Number(target)));
-  return Math.round(p * 100);
+async function attachSubGoals(rows = []) {
+  const goalIds = rows.map(g => g.id).filter(Boolean);
+  if (!goalIds.length) return rows;
+
+  const { data, error } = await supabase
+    .schema('app')
+    .from('goal_sub_goals')
+    .select('id, goal_id, title, description, assignee_employee_id, due_date, status, sort_order')
+    .in('goal_id', goalIds)
+    .order('sort_order', { ascending: true });
+
+  if (error) return rows;
+
+  const byGoal = (data || []).reduce((acc, row) => {
+    (acc[row.goal_id] ||= []).push(row);
+    return acc;
+  }, {});
+
+  return rows.map(g => ({ ...g, sub_goals: byGoal[g.id] || [] }));
 }
 function ProgressBar({ percent }) {
   return (
@@ -69,7 +92,7 @@ function ProgressBar({ percent }) {
 
 // ---------- page ----------
 export default function SelfReview() {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [, setSidebarOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('darkMode');
     return saved !== null ? saved === 'true' : window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -86,6 +109,7 @@ export default function SelfReview() {
   const [progressModal, setProgressModal] = useState(null); // { goal, type, ... }
   const [reviewModal, setReviewModal] = useState(null);     // { goal, review, rating, status }
   const [saving, setSaving] = useState(false);
+  const [subGoalSaving, setSubGoalSaving] = useState({});
   const [toast, setToast] = useState('');
 
   useEffect(() => {
@@ -140,7 +164,7 @@ export default function SelfReview() {
           }
         }
 
-        setGoals(rows);
+        setGoals(await attachSubGoals(rows));
       } catch (e) {
         if (!cancel) setErr(String(e.message || e));
       } finally {
@@ -220,6 +244,27 @@ export default function SelfReview() {
       rating: 3,
       status: 'draft',
     });
+  }
+
+  async function updateSubGoalStatus(subGoalId, status) {
+    setErr('');
+    setSubGoalSaving(s => ({ ...s, [subGoalId]: true }));
+    setGoals(gs => gs.map(g => ({
+      ...g,
+      sub_goals: (g.sub_goals || []).map(s => (
+        s.id === subGoalId ? { ...s, status } : s
+      )),
+    })));
+
+    const { error } = await supabase
+      .schema('public')
+      .rpc('update_goal_sub_goal_status', {
+        p_sub_goal_id: subGoalId,
+        p_status: status,
+      });
+
+    if (error) setErr(error.message);
+    setSubGoalSaving(s => ({ ...s, [subGoalId]: false }));
   }
 
   async function saveProgress() {
@@ -418,6 +463,8 @@ export default function SelfReview() {
                 items={assignedGoals}
                 onAddProgress={openProgress}
                 onWriteReview={openReview}
+                onUpdateSubGoalStatus={updateSubGoalStatus}
+                subGoalSaving={subGoalSaving}
               />
 
               <GoalSection
@@ -427,6 +474,8 @@ export default function SelfReview() {
                 items={selfSelectedGoals}
                 onAddProgress={openProgress}
                 onWriteReview={openReview}
+                onUpdateSubGoalStatus={updateSubGoalStatus}
+                subGoalSaving={subGoalSaving}
               />
             </>
           )}
@@ -609,7 +658,7 @@ export default function SelfReview() {
 }
 
 /* ---------- sections & cards ---------- */
-function GoalSection({ title, subtitle, empty, items, onAddProgress, onWriteReview }) {
+function GoalSection({ title, subtitle, empty, items, onAddProgress, onWriteReview, onUpdateSubGoalStatus, subGoalSaving }) {
   return (
     <section className="card p-5 mb-6">
       <div className="flex items-center justify-between mb-3">
@@ -622,13 +671,22 @@ function GoalSection({ title, subtitle, empty, items, onAddProgress, onWriteRevi
         <EmptyState title={empty} />
       ) : (
         <div className="grid gap-4">
-          {items.map(g => <GoalCard key={g.id} goal={g} onAddProgress={() => onAddProgress(g)} onWriteReview={() => onWriteReview(g)} />)}
+          {items.map(g => (
+            <GoalCard
+              key={g.id}
+              goal={g}
+              onAddProgress={() => onAddProgress(g)}
+              onWriteReview={() => onWriteReview(g)}
+              onUpdateSubGoalStatus={onUpdateSubGoalStatus}
+              subGoalSaving={subGoalSaving}
+            />
+          ))}
         </div>
       )}
     </section>
   );
 }
-function GoalCard({ goal, onAddProgress, onWriteReview }) {
+function GoalCard({ goal, onAddProgress, onWriteReview, onUpdateSubGoalStatus, subGoalSaving = {} }) {
   const lp = goal.latest_progress || {};
   const lm = goal.latest_measurement || {};
   const isQual = (goal.type || '').toLowerCase() === 'qualitative';
@@ -663,6 +721,43 @@ function GoalCard({ goal, onAddProgress, onWriteReview }) {
           <button onClick={onWriteReview} className="px-3 py-1.5 rounded-lg bg-[var(--accent)] text-white text-sm">Write review</button>
         </div>
       </div>
+
+      {goal.sub_goals?.length > 0 && (
+        <div className="mt-3 rounded-lg border p-3 border-[var(--border)]">
+          <div className="text-sm font-medium mb-2">Sub-goals</div>
+          <div className="space-y-2">
+            {goal.sub_goals.map((subGoal) => (
+              <div
+                key={subGoal.id}
+                className="grid gap-2 sm:grid-cols-[1fr_160px] sm:items-center rounded-lg bg-[var(--surface)] px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <div className="text-sm font-medium truncate">{subGoal.title}</div>
+                  {subGoal.description && (
+                    <div className="text-xs muted line-clamp-1">{subGoal.description}</div>
+                  )}
+                  <div className="text-xs muted">
+                    {subGoal.due_date ? `Due ${new Date(subGoal.due_date).toLocaleDateString()}` : 'No due date'}
+                  </div>
+                </div>
+                <select
+                  className="w-full rounded border border-[var(--border)] bg-[var(--card)] px-2 py-1.5 text-sm"
+                  value={subGoal.status || 'not_started'}
+                  disabled={!!subGoalSaving[subGoal.id]}
+                  onChange={(e) => onUpdateSubGoalStatus?.(subGoal.id, e.target.value)}
+                >
+                  {SUB_GOAL_STATUS_OPTIONS.map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+                {subGoalSaving[subGoal.id] && (
+                  <div className="text-[11px] muted sm:col-start-2">Saving...</div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="mt-3 grid sm:grid-cols-2 gap-3 text-sm">
         {/* Target + Current together */}

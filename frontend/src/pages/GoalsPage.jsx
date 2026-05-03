@@ -673,7 +673,7 @@ const alignment_label = form.alignmentObj?.label || 'None';
             onNewGoal={() => { setEditingId(null); setShowForm(true); }}
           />
 
-          <main className="flex-1 ml-20 mt-4 mr-6 mb-6 px-0 overflow-auto">
+          <main className="flex-1 ml-[calc(var(--sidebar-w)+1rem)] mt-4 mr-6 mb-6 px-0 overflow-auto transition-[margin] duration-200">
             <Box sx={{ maxWidth: 1200, mx: 'auto', display: 'flex', flexDirection: 'column', gap: 3 }}>
               {/* Form Card */}
               <Card sx={{ p: 0 }}>

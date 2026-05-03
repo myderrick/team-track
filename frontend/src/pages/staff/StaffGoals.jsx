@@ -481,7 +481,7 @@ function AccordionItem({
         />
 
         {/* Header + filters */}
-        <div className="flex items-center justify-between px-6 py-4 toolbar sticky top-14 z-10 shadow ml-16 group-hover:ml-64">
+        <div className="flex items-center justify-between px-6 py-4 toolbar sticky top-14 z-10 shadow ml-[var(--sidebar-w)] transition-[margin] duration-200">
           <div>
             <h1 className="text-2xl font-bold">My Goals</h1>
             <p className="text-sm muted">Assigned goals & goals you add yourself</p>
@@ -505,7 +505,7 @@ function AccordionItem({
           </div>
         </div>
 
-        <main className="flex-1 ml-16 mt-4 mr-4 mb-4 px-6 overflow-auto">
+        <main className="flex-1 ml-[var(--sidebar-w)] mt-4 mr-4 mb-4 px-6 overflow-auto transition-[margin] duration-200">
           {loading ? (
             <div className="p-6 text-sm muted">Loading…</div>
           ) : err ? (

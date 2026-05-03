@@ -129,7 +129,7 @@ const q = debouncedSearch.trim().toLowerCase();
         />
 
         {/* Main Content */}
-        <main className="flex-1 ml-16 mt-4 mr-4 mb-4 transition-margin duration-200 group-hover:ml-64 px-6 overflow-auto">
+        <main className="flex-1 ml-[var(--sidebar-w)] mt-4 mr-4 mb-4 transition-[margin] duration-200 px-6 overflow-auto">
           <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
             {/* top rule not needed; the filter bar already anchors the section */}
             <div className="mb-2" />

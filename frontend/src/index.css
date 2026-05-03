@@ -3,7 +3,7 @@
 
 /* Tokens + system color-scheme for native UI */
 @layer base {
-  :root { 
+  :root {
     /* light */
     font-family: 'inter', system-ui, Avenir, Helvetica, Arial, sans-serif !important;
     --bg:        #e8f0f9;        /* page background */
@@ -14,6 +14,7 @@
     --fg-muted:  #475569;
     color-scheme: light;
     --accent:    #6366f1;       /* indigo-500 */
+    --sidebar-w: 4rem;          /* set by SidebarPinProvider; default = collapsed */
   }
 
     * { scrollbar-color: var(--border) transparent; }

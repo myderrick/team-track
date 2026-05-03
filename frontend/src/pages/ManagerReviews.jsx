@@ -860,7 +860,7 @@ const loadWorkspace = useCallback(async () => {
       />
 
       {/* Page header */}
-      <div className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 shadow ml-16 transition-all duration-200">
+      <div className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 shadow ml-[var(--sidebar-w)] transition-all duration-200">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
             Manager Reviews
@@ -872,7 +872,7 @@ const loadWorkspace = useCallback(async () => {
       </div>
 
       {/* Content area */}
-      <main className="flex-1 overflow-auto p-6 ml-16 transition-all duration-200">
+      <main className="flex-1 overflow-auto p-6 ml-[var(--sidebar-w)] transition-all duration-200">
         <Box sx={{p: 2, gap: 2}}>
           {/* Toolbar */}
           <Card sx={{...cardCls, mb: 2, px: 2, py: 1.5}}>

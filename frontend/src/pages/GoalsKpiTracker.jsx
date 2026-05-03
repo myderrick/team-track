@@ -868,7 +868,7 @@ export default function GoalsKpiTracker() {
           setAggMode={setAggMode}
               />
 
-              <main className="flex-1 ml-20 mt-4 mr-4 mb-4 px-0 overflow-auto">
+              <main className="flex-1 ml-[calc(var(--sidebar-w)+1rem)] mt-4 mr-4 mb-4 px-0 overflow-auto transition-[margin] duration-200">
           {loading ? (
             <div className="p-6">
               <div className={`text-sm ${textMuted}`}>Loading…</div>

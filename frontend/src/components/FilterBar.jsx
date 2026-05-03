@@ -70,7 +70,7 @@ export default function FilterBar({
   return (
     <div
       className={[
-        'toolbar sticky top-14 z-10 ml-16 group-hover:ml-64 transition-[margin] duration-200',
+        'toolbar sticky top-14 z-10 ml-[var(--sidebar-w)] transition-[margin] duration-200',
         'px-6 py-3 backdrop-blur supports-[backdrop-filter]:bg-[var(--surface)]/60'
       ].join(' ')}
     >

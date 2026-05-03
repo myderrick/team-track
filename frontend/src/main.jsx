@@ -5,11 +5,14 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 import { DarkModeProvider } from './theme/DarkModeProvider.jsx';
+import { SidebarPinProvider } from './theme/SidebarPinProvider.jsx';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <DarkModeProvider>
-      <App />
+      <SidebarPinProvider>
+        <App />
+      </SidebarPinProvider>
     </DarkModeProvider>
   </React.StrictMode>
 );

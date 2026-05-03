@@ -193,7 +193,7 @@ setGoals(normalizedGoals);
         />
 
         {/* Filters */}
-        <div className="toolbar flex items-center justify-between px-6 py-4 sticky top-14 z-10 shadow ml-16 group-hover:ml-64">
+        <div className="toolbar flex items-center justify-between px-6 py-4 sticky top-14 z-10 shadow ml-[var(--sidebar-w)] transition-[margin] duration-200">
           <div>
             <h1 className="text-2xl font-bold">My Dashboard</h1>
             <p className="text-sm muted">Personal performance overview</p>
@@ -222,7 +222,7 @@ setGoals(normalizedGoals);
           />
         }
 
-        <main className="flex-1 ml-16 mt-4 mr-4 mb-4 px-6 overflow-auto">
+        <main className="flex-1 ml-[var(--sidebar-w)] mt-4 mr-4 mb-4 px-6 overflow-auto transition-[margin] duration-200">
           {loading ? (
             <div className="p-6 text-sm text-[var(--fg-muted)]">Loading…</div>
           ) : err ? (

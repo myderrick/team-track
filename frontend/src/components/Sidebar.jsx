@@ -4,9 +4,10 @@ import { NavLink, useLocation } from 'react-router-dom';
 import {
   HomeIcon, Cog8ToothIcon, UserCircleIcon, ClipboardDocumentListIcon, CogIcon,
   ChartBarSquareIcon, ArrowDownLeftIcon, QuestionMarkCircleIcon, ArrowRightEndOnRectangleIcon,
-  PencilSquareIcon
+  PencilSquareIcon, ChevronDoubleLeftIcon, ChevronDoubleRightIcon
 } from '@heroicons/react/24/outline';
 import logo from '../assets/teamtrack.png';
+import { useSidebarPin } from '@/theme/SidebarPinProvider';
 
 const ORG_ITEMS = [
   { label: 'Home', href: '/dashboard', Icon: HomeIcon },
@@ -30,21 +31,45 @@ const STAFF_ITEMS = [
 
 export default function Sidebar({ variant }) {
   const { pathname } = useLocation();
+  const { pinned, togglePinned } = useSidebarPin();
   const mode = useMemo(() => (variant ? variant : pathname.startsWith('/staff') ? 'staff' : 'org'), [variant, pathname]);
   const navItems = mode === 'staff' ? STAFF_ITEMS : ORG_ITEMS;
+
+  // When pinned: stay expanded. When not: collapsed with hover-expand overlay.
+  const widthCls = pinned ? 'w-64' : 'w-16 group-hover:w-64';
+  const labelCls = pinned
+    ? 'opacity-100'
+    : 'opacity-0 group-hover:opacity-100 transition-opacity duration-200';
+  const PinIcon = pinned ? ChevronDoubleLeftIcon : ChevronDoubleRightIcon;
 
   return (
     <div className="fixed inset-y-0 left-0 z-[1000] flex group">
       <aside
-        className="
+        className={`
           flex flex-col h-full overflow-hidden shadow-lg transition-all duration-200 ease-in-out
-          w-16 group-hover:w-64 mt-1.5
+          ${widthCls} mt-1.5
           bg-[var(--card)] text-[var(--fg)] border-r border-[var(--border)]
-        "
+        `}
       >
-        {/* Logo */}
-        <div className="flex items-center justify-center h-16">
+        {/* Header: logo + pin toggle */}
+        <div className="relative flex items-center justify-center h-16">
           <img src={logo} alt="Team Track" className="h-8 w-auto" />
+          <button
+            type="button"
+            onClick={togglePinned}
+            title={pinned ? 'Unpin sidebar' : 'Pin sidebar open'}
+            aria-label={pinned ? 'Unpin sidebar' : 'Pin sidebar open'}
+            aria-pressed={pinned}
+            className={`
+              absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded
+              text-[var(--fg-muted)] hover:text-[var(--accent)] hover:bg-[var(--surface)]
+              focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]
+              transition-opacity
+              ${pinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}
+            `}
+          >
+            <PinIcon className="w-4 h-4" />
+          </button>
         </div>
         <hr className="border-[var(--border)]" />
 
@@ -57,22 +82,15 @@ export default function Sidebar({ variant }) {
                   to={item.href}
                   title={item.label}
                   className={({ isActive }) => [
-                    'group flex items-center w-full px-4 py-2 transition-colors rounded-r-xl',
+                    'flex items-center w-full px-4 py-2 transition-colors rounded-r-xl',
                     'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]',
                     isActive
                       ? 'bg-[color-mix(in oklab,var(--accent) 16%, transparent)] text-[var(--accent)]'
                       : 'hover:bg-[var(--surface)] text-[var(--fg)]'
                   ].join(' ')}
-                  aria-current={({ isActive }) => (isActive ? 'page' : undefined)}
                 >
                   <item.Icon className="w-6 h-6 flex-shrink-0" />
-                  <span
-                    className="
-                      ml-3 text-sm whitespace-nowrap
-                      opacity-0 group-hover:opacity-100
-                      transition-opacity duration-200
-                    "
-                  >
+                  <span className={`ml-3 text-sm whitespace-nowrap ${labelCls}`}>
                     {item.label}
                   </span>
                 </NavLink>
@@ -91,7 +109,7 @@ export default function Sidebar({ variant }) {
               key={label}
               onClick={onClick}
               className="
-                group flex items-center w-full px-4 py-2 rounded transition-colors
+                flex items-center w-full px-4 py-2 rounded transition-colors
                 text-[var(--fg)] hover:bg-[var(--surface)]
                 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]
                 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]
@@ -99,7 +117,7 @@ export default function Sidebar({ variant }) {
               type="button"
             >
               <Icon className="w-6 h-6 flex-shrink-0" />
-              <span className="ml-3 text-sm whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+              <span className={`ml-3 text-sm whitespace-nowrap ${labelCls}`}>
                 {label}
               </span>
             </button>

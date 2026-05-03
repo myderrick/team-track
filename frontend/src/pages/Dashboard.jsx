@@ -246,7 +246,7 @@ useEffect(() => {
 
           {/* Empty-state prompt stays the same */}
           {employeeCount === 0 && (
-            <div className="flex-1 ml-16 mt-4 mr-4 mb-4 transition-margin duration-200 group-hover:ml-64 px-6 overflow-auto">
+            <div className="flex-1 ml-[var(--sidebar-w)] mt-4 mr-4 mb-4 transition-[margin] duration-200 px-6 overflow-auto">
               <EmptyState
                 title="Let's add your first employee"
                 subtitle="Add someone to unlock leaderboards, goals, and performance insights."
@@ -262,7 +262,7 @@ useEffect(() => {
           )}
 
           {/* Main Content */}
-          <main className="flex-1 ml-16 mt-4 mr-4 mb-4 transition-margin duration-200 group-hover:ml-64 px-6 overflow-auto">
+          <main className="flex-1 ml-[var(--sidebar-w)] mt-4 mr-4 mb-4 transition-[margin] duration-200 px-6 overflow-auto">
             <div className="mx-auto max-w-7xl w-full">
               {/* KPI header row */}
               <div className="flex justify-between items-center mb-4">

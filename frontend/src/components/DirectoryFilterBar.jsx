@@ -53,7 +53,7 @@ export default function DirectoryFilterBar({
   onAddEmployee,
 }) {
   return (
-    <div className="flex flex-col md:flex-row items-center justify-between px-6 py-3 sticky top-14 z-10 ml-16 group-hover:ml-64 transition-[margin] duration-200
+    <div className="flex flex-col md:flex-row items-center justify-between px-6 py-3 sticky top-14 z-10 ml-[var(--sidebar-w)] transition-[margin] duration-200
       border-b border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-800/70 backdrop-blur supports-[backdrop-filter]:bg-white/60">
       <div className="min-w-0">
         <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100 truncate">{title}</h1>

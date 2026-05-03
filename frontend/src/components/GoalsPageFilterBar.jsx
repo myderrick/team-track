@@ -3,7 +3,7 @@ import { CalendarDays, Search, Plus } from 'lucide-react';
 
 const WRAP =
   'flex flex-col md:flex-row items-center justify-between px-6 py-3 sticky top-14 z-10 ' +
-  'ml-16 group-hover:ml-64 transition-[margin] duration-200 ' +
+  'ml-[var(--sidebar-w)] transition-[margin] duration-200 ' +
   'border-b bg-[var(--card)] text-[var(--fg)] border-[var(--border)] ' +
   'backdrop-blur supports-[backdrop-filter]:bg-[color-mix(in oklab,var(--card) 85%, transparent)]';
 

@@ -246,7 +246,7 @@ export default function Settings() {
         onToggleDark={() => setDarkMode(m => !m)}
       />
 
-      <div className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 shadow ml-16 group-hover:ml-64 transition-margin duration-200">
+      <div className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 shadow ml-[var(--sidebar-w)] transition-[margin] duration-200">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Settings</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">Manage Global Settings</p>
@@ -263,7 +263,7 @@ export default function Settings() {
         </div>
       </div>
 
-      <main className="flex-1 ml-20 mt-4 mr-4 mb-4 transition-margin duration-200 group-hover:ml-64 px-0 overflow-auto">
+      <main className="flex-1 ml-[calc(var(--sidebar-w)+1rem)] mt-4 mr-4 mb-4 transition-[margin] duration-200 px-0 overflow-auto">
         <section className="mb-8 bg-white dark:bg-gray-800 rounded-lg p-6 shadow rounded-xl">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-medium">KPI Templates</h3>

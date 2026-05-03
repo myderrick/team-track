@@ -191,7 +191,7 @@ export default function PerformanceReviewsPage() {
             />
 
             {/* Filter Bar */}
-            <div className="toolbar sticky top-14 z-10 shadow ml-16 px-6 py-4 transition-margin duration-200">
+            <div className="toolbar sticky top-14 z-10 shadow ml-[var(--sidebar-w)] px-6 py-4 transition-[margin] duration-200">
                 <div className="flex flex-col md:flex-row items-center justify-between">
                     <div>
                         <h1 className="text-2xl font-bold">Performance Reviews</h1>
@@ -226,11 +226,11 @@ export default function PerformanceReviewsPage() {
             <main
                 className="
           flex-1
-          ml-20
+          ml-[calc(var(--sidebar-w)+1rem)]
           mt-4
           mr-4
           mb-4
-          transition-margin duration-200
+          transition-[margin] duration-200
           px-0
           overflow-auto
         "

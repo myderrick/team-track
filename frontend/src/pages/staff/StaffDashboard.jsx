@@ -6,37 +6,81 @@ import Sidebar from '@/components/Sidebar';
 import TopBar from '@/components/TopBar';
 import EmptyState from '@/components/EmptyState';
 import { supabase } from '@/lib/supabaseClient';
-import { useOrg } from '@/context/OrgContext';
 import UpdateProgressModal from '../../components/UpdateProgressModal';
 import { useNavigate } from 'react-router-dom';
 
-function currentQuarterLabel(d = new Date()) {
-  const q = Math.floor(d.getMonth() / 3) + 1;
-  return `Q${q} ${d.getFullYear()}`;
+function currentQuarterNumber(d = new Date()) {
+  return Math.floor(d.getMonth() / 3) + 1;
 }
 
-function buildQuarterOptions({ years = 4, clampCurrentYearToCurrentQuarter = false } = {}) {
+function buildYearOptions({ years = 4 } = {}) {
   const now = new Date();
   const Y = now.getFullYear();
   const startYear = Y - (years - 1);
   const opts = [];
-  for (let y = startYear; y <= Y; y++) {
-    const maxQ = clampCurrentYearToCurrentQuarter && y === Y ? Math.floor(now.getMonth() / 3) + 1 : 4;
-    for (let q = 1; q <= maxQ; q++) {
-      opts.push(`Q${q} ${y}`);
-    }
-  }
+  for (let y = startYear; y <= Y; y++) opts.push(y);
   return opts.reverse();
 }
 
-function quarterBounds(label) {
-  const [qStr, yStr] = (label || '').split(' ');
-  const year = Number(yStr || new Date().getFullYear());
-  const q = Number((qStr || 'Q1').replace('Q','')) || 1;
-  const startMonth = (q - 1) * 3;
-  const start = new Date(year, startMonth, 1);
-  const end = new Date(year, startMonth + 3, 0);
+function quarterLabel(year, quarterNumber) {
+  return `Q${quarterNumber} ${year}`;
+}
+
+function parseQuarterLabel(label) {
+  const match = String(label || '').match(/^Q([1-4])\s+(\d{4})$/i);
+  return match ? { quarter: Number(match[1]), year: Number(match[2]) } : null;
+}
+
+function quarterDateRange(label) {
+  const parsed = parseQuarterLabel(label);
+  if (!parsed) return null;
+  const startMonth = (parsed.quarter - 1) * 3 + 1;
+  const endMonth = startMonth + 2;
+  const lastDay = new Date(parsed.year, endMonth, 0).getDate();
+  return {
+    start: `${parsed.year}-${String(startMonth).padStart(2, '0')}-01`,
+    end: `${parsed.year}-${String(endMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`,
+  };
+}
+
+function dateOnly(value) {
+  return value ? String(value).slice(0, 10) : null;
+}
+
+function rangesOverlap(aStart, aEnd, bStart, bEnd) {
+  return !!aStart && !!aEnd && aStart <= bEnd && aEnd >= bStart;
+}
+
+function goalQuarter(goal) {
+  return goal.quarter || goal.goal_quarter || goal.meta?.quarter || null;
+}
+
+function goalPeriodYear(goal) {
+  const fromPeriod = goal.period_year || goal.meta?.period_year;
+  const fromQuarter = parseQuarterLabel(goalQuarter(goal))?.year;
+  const fromDeadline = dateOnly(goal.deadline || goal.due_date || goal.end_date)?.slice(0, 4);
+  return Number(fromPeriod || fromQuarter || fromDeadline) || null;
+}
+
+function goalDateWindow(goal) {
+  const start = dateOnly(goal.period_start_date || goal.start_date || goal.meta?.period_start_date);
+  const end = dateOnly(goal.period_end_date || goal.deadline || goal.end_date || goal.meta?.period_end_date);
   return { start, end };
+}
+
+function goalMatchesQuarter(goal, quarter) {
+  const parsed = parseQuarterLabel(quarter);
+  if (!parsed) return true;
+
+  const periodType = goal.period_type || goal.meta?.period_type || null;
+  if (periodType === 'annual' && goalPeriodYear(goal) === parsed.year) return true;
+
+  const explicitQuarter = goalQuarter(goal);
+  if (explicitQuarter) return explicitQuarter === quarter;
+
+  const selectedRange = quarterDateRange(quarter);
+  const goalRange = goalDateWindow(goal);
+  return !!selectedRange && rangesOverlap(goalRange.start, goalRange.end, selectedRange.start, selectedRange.end);
 }
 
 const currencySymbol = (code) =>
@@ -49,13 +93,14 @@ const fmtMeasure = (n, unit, currency_code) => {
 };
 
 export default function StaffDashboard() {
-  const { orgId } = useOrg();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const navigate = useNavigate();
 
 
-  const quarterOptions = useMemo(() => buildQuarterOptions({ years: 4 }), []);
-  const [quarter, setQuarter] = useState(currentQuarterLabel());
+  const yearOptions = useMemo(() => buildYearOptions({ years: 4 }), []);
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [quarterNumber, setQuarterNumber] = useState(currentQuarterNumber());
+  const quarter = quarterLabel(year, quarterNumber);
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
@@ -102,6 +147,7 @@ const normalizedGoals = (data?.goals || []).map(g => ({
   ...g,
   // reliable title
   title: g.title ?? g.label ?? g.name ?? g.goal_title ?? g.goal ?? g.text ?? 'Untitled goal',
+  quarter: g.quarter ?? g.goal_quarter ?? g.meta?.quarter ?? null,
   // 🔧 map DB fields to what the UI expects
   target: g.target ?? g.target_value ?? null,
   currency_code: g.currency ?? g.currency_code ?? null,
@@ -109,7 +155,7 @@ const normalizedGoals = (data?.goals || []).map(g => ({
   measure_type: g.measure_type ?? g.type ?? (g.currency ? 'monetary' : 'numeric'),
   //org_goal
   org_goal_label: g.org_goal_label ?? 'None',  // ✅ use the DB label
-}));
+})).filter(g => goalMatchesQuarter(g, quarter));
 
 setGoals(normalizedGoals);
 
@@ -188,7 +234,7 @@ setGoals(normalizedGoals);
           onToggleDark={() => {
             const el = document.documentElement;
             const isDark = el.classList.toggle('dark');
-            try { localStorage.setItem('theme', isDark ? 'dark' : 'light'); } catch {}
+            try { localStorage.setItem('theme', isDark ? 'dark' : 'light'); } catch { /* ignore storage failures */ }
           }}
         />
 
@@ -196,16 +242,31 @@ setGoals(normalizedGoals);
         <div className="toolbar flex items-center justify-between px-6 py-4 sticky top-14 z-10 shadow ml-[var(--sidebar-w)] transition-[margin] duration-200">
           <div>
             <h1 className="text-2xl font-bold">My Dashboard</h1>
-            <p className="text-sm muted">Personal performance overview</p>
+            <p className="text-sm muted">Personal performance overview for {quarter}</p>
           </div>
-          <div className="flex gap-3 items-center">
+          <div className="flex flex-wrap justify-end gap-3 items-center">
             <select
-              value={quarter}
-              onChange={e => setQuarter(e.target.value)}
+              value={year}
+              onChange={e => setYear(Number(e.target.value))}
               className="px-3 py-2 border rounded-lg bg-[var(--card)] border-[var(--border)]"
             >
-              {quarterOptions.map(q => <option key={q}>{q}</option>)}
+              {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
             </select>
+            <div className="inline-flex rounded-lg border border-[var(--border)] bg-[var(--card)] p-1">
+              {[1, 2, 3, 4].map(q => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => setQuarterNumber(q)}
+                  className={[
+                    'rounded-md px-3 py-1.5 text-sm',
+                    quarterNumber === q ? 'bg-[var(--accent)] text-white' : 'text-[var(--fg-muted)] hover:text-[var(--fg)]',
+                  ].join(' ')}
+                >
+                  Q{q}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 

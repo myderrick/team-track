@@ -27,21 +27,80 @@ const SUB_GOAL_STATUS_LABELS = {
 };
 const SUB_GOAL_STATUS_OPTIONS = Object.entries(SUB_GOAL_STATUS_LABELS);
 
+function friendlyStaffActionError(error) {
+  const message = String(error?.message || error || '');
 
-function currentQuarterLabel(d = new Date()) {
-  const q = Math.floor(d.getMonth() / 3) + 1;
-  return `Q${q} ${d.getFullYear()}`;
+  if (/goals_target_by_type_chk/i.test(message)) {
+    return 'This goal has an invalid measure setup. Numeric and monetary goals need a target number; qualitative goals should not have a target.';
+  }
+  if (/violates check constraint/i.test(message)) {
+    return 'Some details do not match the expected format. Review your entries and try again.';
+  }
+  if (/permission denied|not allowed|row-level security|violates row-level security/i.test(message)) {
+    return 'You do not have permission to update this item. If this looks wrong, ask HR or your manager to check your profile access.';
+  }
+  if (/invalid input syntax.*numeric|invalid.*number/i.test(message)) {
+    return 'Enter a valid number before saving.';
+  }
+  if (/invalid sub-goal status/i.test(message)) {
+    return 'Choose a valid sub-goal status.';
+  }
+  if (/network|failed to fetch/i.test(message)) {
+    return 'Could not reach the server. Check your connection and try again.';
+  }
+
+  return message || 'Something went wrong while saving. Please try again.';
 }
-function buildQuarterOptions({ years = 4 } = {}) {
+
+
+function currentQuarterNumber(d = new Date()) {
+  return Math.floor(d.getMonth() / 3) + 1;
+}
+function buildYearOptions({ years = 4 } = {}) {
   const now = new Date();
   const Y = now.getFullYear();
   const startYear = Y - (years - 1);
   const opts = [];
-  for (let y = startYear; y <= Y; y++) {
-    const maxQ = y === Y ? Math.floor(now.getMonth() / 3) + 1 : 4;
-    for (let q = 1; q <= maxQ; q++) opts.push(`Q${q} ${y}`);
-  }
+  for (let y = startYear; y <= Y; y++) opts.push(y);
   return opts.reverse();
+}
+function quarterLabel(year, quarterNumber) {
+  return `Q${quarterNumber} ${year}`;
+}
+function parseQuarterLabel(label) {
+  const match = String(label || '').match(/^Q([1-4])\s+(\d{4})$/i);
+  return match ? { quarter: Number(match[1]), year: Number(match[2]) } : null;
+}
+function quarterDateRange(label) {
+  const parsed = parseQuarterLabel(label);
+  if (!parsed) return null;
+  const startMonth = (parsed.quarter - 1) * 3 + 1;
+  const endMonth = startMonth + 2;
+  const lastDay = new Date(parsed.year, endMonth, 0).getDate();
+  return {
+    start: `${parsed.year}-${String(startMonth).padStart(2, '0')}-01`,
+    end: `${parsed.year}-${String(endMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`,
+  };
+}
+function dateOnly(value) {
+  return value ? String(value).slice(0, 10) : null;
+}
+function rangesOverlap(aStart, aEnd, bStart, bEnd) {
+  return !!aStart && !!aEnd && aStart <= bEnd && aEnd >= bStart;
+}
+function goalQuarter(goal) {
+  return goal.quarter || goal.goal_quarter || goal.meta?.quarter || null;
+}
+function goalPeriodYear(goal) {
+  const fromPeriod = goal.period_year || goal.meta?.period_year;
+  const fromQuarter = parseQuarterLabel(goalQuarter(goal))?.year;
+  const fromDeadline = dateOnly(goal.deadline || goal.due_date || goal.end_date)?.slice(0, 4);
+  return Number(fromPeriod || fromQuarter || fromDeadline) || null;
+}
+function goalDateWindow(goal) {
+  const start = dateOnly(goal.period_start_date || goal.start_date || goal.meta?.period_start_date);
+  const end = dateOnly(goal.period_end_date || goal.deadline || goal.end_date || goal.meta?.period_end_date);
+  return { start, end };
 }
 async function rpcSafe(name, args) {
   let r = await supabase.rpc(name, args);
@@ -52,10 +111,10 @@ async function rpcSafe(name, args) {
   return r;
 }
 async function getLatestProgress(ids, quarter) {
-  let r = await rpcSafe('goal_progress_latest', { p_goal_ids: ids });
+  let r = await rpcSafe('goal_progress_latest', { p_goal_ids: ids, p_quarter: quarter });
   const msg = r.error?.message || '';
   if (r.error && /does not exist|No function matches|schema cache/i.test(msg)) {
-    r = await rpcSafe('goal_progress_latest', { p_goal_ids: ids, p_quarter: quarter });
+    r = await rpcSafe('goal_progress_latest', { p_goal_ids: ids });
   }
   return r;
 }
@@ -72,8 +131,26 @@ async function attachSubGoals(rows = []) {
 
   if (error) return rows;
 
+  const subGoalIds = (data || []).map(row => row.id);
+  let latestBySubGoal = {};
+  if (subGoalIds.length) {
+    const updatesRes = await supabase
+      .schema('app')
+      .from('goal_sub_goal_updates')
+      .select('id, sub_goal_id, status, note, created_at')
+      .in('sub_goal_id', subGoalIds)
+      .order('created_at', { ascending: false });
+
+    if (!updatesRes.error) {
+      latestBySubGoal = (updatesRes.data || []).reduce((acc, row) => {
+        if (!acc[row.sub_goal_id]) acc[row.sub_goal_id] = row;
+        return acc;
+      }, {});
+    }
+  }
+
   const byGoal = (data || []).reduce((acc, row) => {
-    (acc[row.goal_id] ||= []).push(row);
+    (acc[row.goal_id] ||= []).push({ ...row, latest_update: latestBySubGoal[row.id] || null });
     return acc;
   }, {});
 
@@ -90,6 +167,25 @@ function ProgressBar({ percent }) {
   );
 }
 
+function goalMatchesQuarter(goal, quarter) {
+  const parsed = parseQuarterLabel(quarter);
+  if (!parsed) return true;
+
+  const periodType = goal.period_type || goal.meta?.period_type || null;
+  if (periodType === 'annual' && goalPeriodYear(goal) === parsed.year) return true;
+
+  const explicitQuarter = goalQuarter(goal);
+  if (explicitQuarter) return explicitQuarter === quarter;
+
+  const selectedRange = quarterDateRange(quarter);
+  const goalRange = goalDateWindow(goal);
+  if (selectedRange && rangesOverlap(goalRange.start, goalRange.end, selectedRange.start, selectedRange.end)) {
+    return true;
+  }
+
+  return false;
+}
+
 // ---------- page ----------
 export default function SelfReview() {
   const [, setSidebarOpen] = useState(false);
@@ -98,8 +194,10 @@ export default function SelfReview() {
     return saved !== null ? saved === 'true' : window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
 
-  const quarterOptions = useMemo(() => buildQuarterOptions({ years: 4 }), []);
-  const [quarter, setQuarter] = useState(currentQuarterLabel());
+  const yearOptions = useMemo(() => buildYearOptions({ years: 4 }), []);
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [quarterNumber, setQuarterNumber] = useState(currentQuarterNumber());
+  const quarter = quarterLabel(year, quarterNumber);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [goals, setGoals] = useState([]);
@@ -110,6 +208,8 @@ export default function SelfReview() {
   const [reviewModal, setReviewModal] = useState(null);     // { goal, review, rating, status }
   const [saving, setSaving] = useState(false);
   const [subGoalSaving, setSubGoalSaving] = useState({});
+  const [subGoalDrafts, setSubGoalDrafts] = useState({});
+  const [expandedSubGoals, setExpandedSubGoals] = useState({});
   const [toast, setToast] = useState('');
 
   useEffect(() => {
@@ -122,12 +222,14 @@ export default function SelfReview() {
     (async () => {
       try {
         setLoading(true); setErr('');
-        const r = await supabase.schema('public').rpc('my_dashboard');
+        const r = await supabase.schema('public').rpc('my_dashboard', { p_quarter: quarter });
         if (cancel) return;
         if (r.error) throw r.error;
 
         setMe(r.data?.me || null);
-        let rows = (r.data?.goals || []).map(normalizeGoal);
+        let rows = (r.data?.goals || [])
+          .map(normalizeGoal)
+          .filter(g => goalMatchesQuarter(g, quarter));
 
         // If the dashboard already sent latest measurements, merge them now
         if (Array.isArray(r.data?.latest_measurements) && r.data.latest_measurements.length > 0) {
@@ -172,7 +274,7 @@ export default function SelfReview() {
       }
     })();
     return () => { cancel = true; };
-  }, []); // no dependency on quarter
+  }, [quarter]);
 
   const assignedGoals = useMemo(
     () => goals.filter(g => !(g.meta?.self_selected === true)),
@@ -183,6 +285,14 @@ export default function SelfReview() {
     [goals]
   );
 
+  const reviewSummary = useMemo(() => {
+    const total = goals.length;
+    const reviewed = goals.filter(g => g.latest_progress || g.latest_measurement).length;
+    const subGoals = goals.flatMap(g => g.sub_goals || []);
+    const completedSubGoals = subGoals.filter(s => s.status === 'completed').length;
+    return { total, reviewed, pending: Math.max(0, total - reviewed), subGoals: subGoals.length, completedSubGoals };
+  }, [goals]);
+
   // map DB -> UI
   function normalizeGoal(row = {}) {
   const type =
@@ -191,6 +301,7 @@ export default function SelfReview() {
     ...row,
     title: row.title || row.label || row.name || '',
     description: row.description || row.details || null,
+    quarter: row.quarter || row.goal_quarter || row.meta?.quarter || null,
     type,                                   // 'numeric' | 'monetary' | 'qualitative'
     target_value: row.target_value ?? row.target ?? null,
     unit: row.unit ?? row.meta?.unit ?? null,
@@ -246,24 +357,51 @@ export default function SelfReview() {
     });
   }
 
-  async function updateSubGoalStatus(subGoalId, status) {
+  async function saveSubGoalUpdate(subGoalId) {
+    const draft = subGoalDrafts[subGoalId] || {};
+    const status = draft.status || goals
+      .flatMap(g => g.sub_goals || [])
+      .find(s => s.id === subGoalId)?.status || 'not_started';
+    const note = draft.note || '';
+
     setErr('');
     setSubGoalSaving(s => ({ ...s, [subGoalId]: true }));
+    const nowIso = new Date().toISOString();
     setGoals(gs => gs.map(g => ({
       ...g,
       sub_goals: (g.sub_goals || []).map(s => (
-        s.id === subGoalId ? { ...s, status } : s
+        s.id === subGoalId
+          ? {
+              ...s,
+              status,
+              latest_update: {
+                id: s.latest_update?.id || `local-${subGoalId}`,
+                sub_goal_id: subGoalId,
+                status,
+                note: note.trim() || null,
+                created_at: nowIso,
+              },
+            }
+          : s
       )),
     })));
 
     const { error } = await supabase
       .schema('public')
-      .rpc('update_goal_sub_goal_status', {
+      .rpc('add_goal_sub_goal_update', {
         p_sub_goal_id: subGoalId,
         p_status: status,
-      });
+        p_note: note || null,
+    });
 
-    if (error) setErr(error.message);
+    if (error) {
+      setErr(friendlyStaffActionError(error));
+    } else {
+      setToast('Sub-goal update saved.');
+      setSubGoalDrafts(drafts => ({ ...drafts, [subGoalId]: { status, note: '' } }));
+      setExpandedSubGoals(s => ({ ...s, [subGoalId]: false }));
+      setTimeout(() => setToast(''), 1500);
+    }
     setSubGoalSaving(s => ({ ...s, [subGoalId]: false }));
   }
 
@@ -303,7 +441,7 @@ export default function SelfReview() {
         p_currency: type === 'monetary' ? (progressModal.currency || goal.currency || null) : null,
         p_qual_status: null,
         p_note: progressModal.note || null,
-        p_quarter: null,
+        p_quarter: quarter,
         p_measured_at: null,
       });
 
@@ -354,7 +492,7 @@ export default function SelfReview() {
         p_currency: null,
         p_qual_status: progressModal.qual_status || 'in_progress',
         p_note: progressModal.note || null,
-        p_quarter: null,
+        p_quarter: quarter,
         p_measured_at: null,
       });
 
@@ -389,7 +527,7 @@ export default function SelfReview() {
       setTimeout(() => setToast(''), 1500);
     }
   } catch (e) {
-    setErr(String(e.message || e));
+    setErr(friendlyStaffActionError(e));
   } finally {
     setSaving(false);
   }
@@ -413,7 +551,7 @@ export default function SelfReview() {
       setReviewModal(null);
       setTimeout(() => setToast(''), 1500);
     } catch (e) {
-      setErr(String(e.message || e));
+      setErr(friendlyStaffActionError(e));
     } finally {
       setSaving(false);
     }
@@ -433,16 +571,31 @@ export default function SelfReview() {
         <div className="toolbar flex items-center justify-between px-6 py-4 sticky top-14 z-10 shadow ml-[var(--sidebar-w)] transition-[margin] duration-200">
           <div>
             <h1 className="text-2xl font-bold">Self-Review</h1>
-            <p className="text-sm muted">Update progress and add your self-assessment</p>
+            <p className="text-sm muted">Update progress and add your self-assessment for {quarter}</p>
           </div>
-          <div className="flex gap-3 items-center">
+          <div className="flex flex-wrap justify-end gap-3 items-center">
             <select
-              value={quarter}
-              onChange={e => setQuarter(e.target.value)}
+              value={year}
+              onChange={e => setYear(Number(e.target.value))}
               className="px-3 py-2 border rounded-lg bg-[var(--card)] border-[var(--border)]"
             >
-              {quarterOptions.map(q => <option key={q}>{q}</option>)}
+              {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
             </select>
+            <div className="inline-flex rounded-lg border border-[var(--border)] bg-[var(--card)] p-1">
+              {[1, 2, 3, 4].map(q => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => setQuarterNumber(q)}
+                  className={[
+                    'rounded-md px-3 py-1.5 text-sm',
+                    quarterNumber === q ? 'bg-[var(--accent)] text-white' : 'text-[var(--fg-muted)] hover:text-[var(--fg)]',
+                  ].join(' ')}
+                >
+                  Q{q}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -457,14 +610,28 @@ export default function SelfReview() {
             <>
               {toast && <div className="mb-3 text-sm text-green-600">{toast}</div>}
 
+              <div className="grid gap-3 sm:grid-cols-4 mb-4">
+                <SummaryTile label="Goals" value={reviewSummary.total} />
+                <SummaryTile label="Updated" value={reviewSummary.reviewed} />
+                <SummaryTile label="Pending" value={reviewSummary.pending} />
+                <SummaryTile
+                  label="Sub-goals"
+                  value={`${reviewSummary.completedSubGoals}/${reviewSummary.subGoals}`}
+                />
+              </div>
+
               <GoalSection
                 title="Assigned goals"
                 empty="No assigned goals"
                 items={assignedGoals}
                 onAddProgress={openProgress}
                 onWriteReview={openReview}
-                onUpdateSubGoalStatus={updateSubGoalStatus}
+                onSaveSubGoalUpdate={saveSubGoalUpdate}
                 subGoalSaving={subGoalSaving}
+                subGoalDrafts={subGoalDrafts}
+                setSubGoalDrafts={setSubGoalDrafts}
+                expandedSubGoals={expandedSubGoals}
+                setExpandedSubGoals={setExpandedSubGoals}
               />
 
               <GoalSection
@@ -474,8 +641,12 @@ export default function SelfReview() {
                 items={selfSelectedGoals}
                 onAddProgress={openProgress}
                 onWriteReview={openReview}
-                onUpdateSubGoalStatus={updateSubGoalStatus}
+                onSaveSubGoalUpdate={saveSubGoalUpdate}
                 subGoalSaving={subGoalSaving}
+                subGoalDrafts={subGoalDrafts}
+                setSubGoalDrafts={setSubGoalDrafts}
+                expandedSubGoals={expandedSubGoals}
+                setExpandedSubGoals={setExpandedSubGoals}
               />
             </>
           )}
@@ -658,7 +829,29 @@ export default function SelfReview() {
 }
 
 /* ---------- sections & cards ---------- */
-function GoalSection({ title, subtitle, empty, items, onAddProgress, onWriteReview, onUpdateSubGoalStatus, subGoalSaving }) {
+function SummaryTile({ label, value }) {
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3">
+      <div className="text-xs muted">{label}</div>
+      <div className="mt-1 text-xl font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function GoalSection({
+  title,
+  subtitle,
+  empty,
+  items,
+  onAddProgress,
+  onWriteReview,
+  onSaveSubGoalUpdate,
+  subGoalSaving,
+  subGoalDrafts,
+  setSubGoalDrafts,
+  expandedSubGoals,
+  setExpandedSubGoals,
+}) {
   return (
     <section className="card p-5 mb-6">
       <div className="flex items-center justify-between mb-3">
@@ -677,8 +870,12 @@ function GoalSection({ title, subtitle, empty, items, onAddProgress, onWriteRevi
               goal={g}
               onAddProgress={() => onAddProgress(g)}
               onWriteReview={() => onWriteReview(g)}
-              onUpdateSubGoalStatus={onUpdateSubGoalStatus}
+              onSaveSubGoalUpdate={onSaveSubGoalUpdate}
               subGoalSaving={subGoalSaving}
+              subGoalDrafts={subGoalDrafts}
+              setSubGoalDrafts={setSubGoalDrafts}
+              expandedSubGoals={expandedSubGoals}
+              setExpandedSubGoals={setExpandedSubGoals}
             />
           ))}
         </div>
@@ -686,7 +883,17 @@ function GoalSection({ title, subtitle, empty, items, onAddProgress, onWriteRevi
     </section>
   );
 }
-function GoalCard({ goal, onAddProgress, onWriteReview, onUpdateSubGoalStatus, subGoalSaving = {} }) {
+function GoalCard({
+  goal,
+  onAddProgress,
+  onWriteReview,
+  onSaveSubGoalUpdate,
+  subGoalSaving = {},
+  subGoalDrafts = {},
+  setSubGoalDrafts,
+  expandedSubGoals = {},
+  setExpandedSubGoals,
+}) {
   const lp = goal.latest_progress || {};
   const lm = goal.latest_measurement || {};
   const isQual = (goal.type || '').toLowerCase() === 'qualitative';
@@ -729,29 +936,80 @@ function GoalCard({ goal, onAddProgress, onWriteReview, onUpdateSubGoalStatus, s
             {goal.sub_goals.map((subGoal) => (
               <div
                 key={subGoal.id}
-                className="grid gap-2 sm:grid-cols-[1fr_160px] sm:items-center rounded-lg bg-[var(--surface)] px-3 py-2"
+                className="rounded-lg bg-[var(--surface)] px-3 py-2"
               >
-                <div className="min-w-0">
-                  <div className="text-sm font-medium truncate">{subGoal.title}</div>
-                  {subGoal.description && (
-                    <div className="text-xs muted line-clamp-1">{subGoal.description}</div>
-                  )}
-                  <div className="text-xs muted">
-                    {subGoal.due_date ? `Due ${new Date(subGoal.due_date).toLocaleDateString()}` : 'No due date'}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium truncate">{subGoal.title}</div>
+                    {subGoal.description && (
+                      <div className="text-xs muted line-clamp-1">{subGoal.description}</div>
+                    )}
+                    <div className="text-xs muted">
+                      {subGoal.due_date ? `Due ${new Date(subGoal.due_date).toLocaleDateString()}` : 'No due date'}
+                    </div>
+                    {subGoal.latest_update?.note && (
+                      <div className="mt-1 text-xs">
+                        <span className="muted">Latest: </span>
+                        {subGoal.latest_update.note}
+                      </div>
+                    )}
                   </div>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-xs"
+                    onClick={() => setExpandedSubGoals?.(s => ({ ...s, [subGoal.id]: !s[subGoal.id] }))}
+                  >
+                    {expandedSubGoals[subGoal.id] ? 'Close' : 'Update'}
+                  </button>
                 </div>
-                <select
-                  className="w-full rounded border border-[var(--border)] bg-[var(--card)] px-2 py-1.5 text-sm"
-                  value={subGoal.status || 'not_started'}
-                  disabled={!!subGoalSaving[subGoal.id]}
-                  onChange={(e) => onUpdateSubGoalStatus?.(subGoal.id, e.target.value)}
-                >
-                  {SUB_GOAL_STATUS_OPTIONS.map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </select>
-                {subGoalSaving[subGoal.id] && (
-                  <div className="text-[11px] muted sm:col-start-2">Saving...</div>
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="rounded-full border border-[var(--border)] bg-[var(--card)] px-2 py-0.5 text-[11px]">
+                    {SUB_GOAL_STATUS_LABELS[subGoal.status] || subGoal.status}
+                  </span>
+                  {subGoalSaving[subGoal.id] && <span className="text-[11px] muted">Saving...</span>}
+                </div>
+                {expandedSubGoals[subGoal.id] && (
+                  <div className="mt-3 grid gap-2 sm:grid-cols-[180px_1fr_130px] sm:items-start">
+                    <select
+                      className="w-full rounded border border-[var(--border)] bg-[var(--card)] px-2 py-1.5 text-sm"
+                      value={subGoalDrafts[subGoal.id]?.status || subGoal.status || 'not_started'}
+                      disabled={!!subGoalSaving[subGoal.id]}
+                      onChange={(e) => setSubGoalDrafts?.(drafts => ({
+                        ...drafts,
+                        [subGoal.id]: {
+                          ...drafts[subGoal.id],
+                          status: e.target.value,
+                        },
+                      }))}
+                    >
+                      {SUB_GOAL_STATUS_OPTIONS.map(([value, label]) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
+                    </select>
+                    <textarea
+                      className="w-full rounded border border-[var(--border)] bg-[var(--card)] px-2 py-1.5 text-sm"
+                      rows={2}
+                      placeholder="Progress note"
+                      value={subGoalDrafts[subGoal.id]?.note || ''}
+                      disabled={!!subGoalSaving[subGoal.id]}
+                      onChange={(e) => setSubGoalDrafts?.(drafts => ({
+                        ...drafts,
+                        [subGoal.id]: {
+                          ...drafts[subGoal.id],
+                          status: drafts[subGoal.id]?.status || subGoal.status || 'not_started',
+                          note: e.target.value,
+                        },
+                      }))}
+                    />
+                    <button
+                      type="button"
+                      className="rounded bg-[var(--accent)] px-3 py-1.5 text-sm text-white disabled:opacity-60"
+                      disabled={!!subGoalSaving[subGoal.id]}
+                      onClick={() => onSaveSubGoalUpdate?.(subGoal.id)}
+                    >
+                      {subGoalSaving[subGoal.id] ? 'Saving...' : 'Save update'}
+                    </button>
+                  </div>
                 )}
               </div>
             ))}

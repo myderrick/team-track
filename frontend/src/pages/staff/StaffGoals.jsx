@@ -6,20 +6,90 @@ import EmptyState from '@/components/EmptyState';
 import { supabase } from '@/lib/supabaseClient';
 import { format, parseISO } from 'date-fns';
 
-function currentQuarterLabel(d = new Date()) {
-  const q = Math.floor(d.getMonth() / 3) + 1;
-  return `Q${q} ${d.getFullYear()}`;
+function currentQuarterNumber(d = new Date()) {
+  return Math.floor(d.getMonth() / 3) + 1;
 }
-function buildQuarterOptions({ years = 4 } = {}) {
+function buildYearOptions({ years = 4 } = {}) {
   const now = new Date();
   const Y = now.getFullYear();
   const startYear = Y - (years - 1);
   const opts = [];
-  for (let y = startYear; y <= Y; y++) {
-    const maxQ = y === Y ? Math.floor(now.getMonth() / 3) + 1 : 4;
-    for (let q = 1; q <= maxQ; q++) opts.push(`Q${q} ${y}`);
-  }
+  for (let y = startYear; y <= Y; y++) opts.push(y);
   return opts.reverse();
+}
+function quarterLabel(year, quarterNumber) {
+  return `Q${quarterNumber} ${year}`;
+}
+function quarterOptionsForYear(year) {
+  return [1, 2, 3, 4].map(q => quarterLabel(year, q));
+}
+function defaultQuarterForYear(year) {
+  return year === new Date().getFullYear() ? currentQuarterNumber() : 1;
+}
+function parseQuarterLabel(label) {
+  const match = String(label || '').match(/^Q([1-4])\s+(\d{4})$/i);
+  return match ? { quarter: Number(match[1]), year: Number(match[2]) } : null;
+}
+function quarterDateRange(label) {
+  const parsed = parseQuarterLabel(label);
+  if (!parsed) return null;
+  const startMonth = (parsed.quarter - 1) * 3 + 1;
+  const endMonth = startMonth + 2;
+  const lastDay = new Date(parsed.year, endMonth, 0).getDate();
+  return {
+    start: `${parsed.year}-${String(startMonth).padStart(2, '0')}-01`,
+    end: `${parsed.year}-${String(endMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`,
+  };
+}
+function yearDateRange(year) {
+  return { start: `${year}-01-01`, end: `${year}-12-31` };
+}
+function dateOnly(value) {
+  return value ? String(value).slice(0, 10) : null;
+}
+function rangesOverlap(aStart, aEnd, bStart, bEnd) {
+  return !!aStart && !!aEnd && aStart <= bEnd && aEnd >= bStart;
+}
+function goalQuarter(goal) {
+  return goal.quarter || goal.goal_quarter || goal.meta?.quarter || null;
+}
+function goalPeriodYear(goal) {
+  const fromPeriod = goal.period_year || goal.meta?.period_year;
+  const fromQuarter = parseQuarterLabel(goalQuarter(goal))?.year;
+  const fromDeadline = dateOnly(goal.deadline || goal.due_date || goal.end_date)?.slice(0, 4);
+  return Number(fromPeriod || fromQuarter || fromDeadline) || null;
+}
+function goalDateWindow(goal) {
+  const start = dateOnly(goal.period_start_date || goal.start_date || goal.meta?.period_start_date);
+  const end = dateOnly(goal.period_end_date || goal.deadline || goal.end_date || goal.meta?.period_end_date);
+  return { start, end };
+}
+function goalMatchesQuarter(goal, quarter) {
+  const parsed = parseQuarterLabel(quarter);
+  if (!parsed) return true;
+
+  const periodType = goal.period_type || goal.meta?.period_type || null;
+  if (periodType === 'annual' && goalPeriodYear(goal) === parsed.year) return true;
+
+  const explicitQuarter = goalQuarter(goal);
+  if (explicitQuarter) return explicitQuarter === quarter;
+
+  const selectedRange = quarterDateRange(quarter);
+  const goalRange = goalDateWindow(goal);
+  if (selectedRange && rangesOverlap(goalRange.start, goalRange.end, selectedRange.start, selectedRange.end)) {
+    return true;
+  }
+
+  return false;
+}
+function goalMatchesYear(goal, year) {
+  if (goalPeriodYear(goal) === year) return true;
+
+  const selectedRange = yearDateRange(year);
+  const goalRange = goalDateWindow(goal);
+  if (rangesOverlap(goalRange.start, goalRange.end, selectedRange.start, selectedRange.end)) return true;
+
+  return false;
 }
 
 const CATEGORIES = [
@@ -46,11 +116,68 @@ function fmtMeasure(n, unit, currency_code) {
   return Number(n || 0).toLocaleString();
 }
 
+function friendlyGoalError(error) {
+  const message = String(error?.message || error || '');
+
+  if (/goals_target_by_type_chk/i.test(message)) {
+    return 'Check the measure type and target. Numeric and monetary goals need a target number; qualitative goals should not have a target.';
+  }
+  if (/violates check constraint/i.test(message)) {
+    return 'Some goal details do not match the expected format. Please review the highlighted fields and try again.';
+  }
+  if (/permission denied|not allowed|row-level security|violates row-level security/i.test(message)) {
+    return 'You do not have permission to make this change. If this looks wrong, ask HR or your manager to check your profile access.';
+  }
+  if (/invalid input syntax.*numeric|invalid.*number/i.test(message)) {
+    return 'Enter a valid number for the target.';
+  }
+  if (/network|failed to fetch/i.test(message)) {
+    return 'Could not reach the server. Check your connection and try again.';
+  }
+
+  return message || 'Something went wrong while saving this goal. Please try again.';
+}
+
+function validateGoalDraft(goal) {
+  const title = goal?.title?.trim();
+  if (!title) return 'Enter a goal title.';
+
+  const type = goal?.measure_type || 'numeric';
+  if (type === 'numeric' || type === 'monetary') {
+    const target = Number(goal?.target);
+    if (goal?.target === null || goal?.target === '' || !Number.isFinite(target)) {
+      return type === 'monetary'
+        ? 'Enter a target amount for this monetary goal.'
+        : 'Enter a target number for this goal.';
+    }
+    if (target <= 0) return 'Target must be greater than zero.';
+  }
+
+  if (type === 'monetary' && !goal?.currency_code) {
+    return 'Choose a currency for this monetary goal.';
+  }
+
+  return '';
+}
+
+function goalPayloadValues(goal) {
+  const type = goal?.measure_type || 'numeric';
+  return {
+    targetValue:
+      type === 'qualitative' || goal.target === null || goal.target === ''
+        ? null
+        : Number(goal.target),
+    unit: type === 'numeric' ? goal.unit || null : null,
+    currency: type === 'monetary' ? goal.currency_code || null : null,
+  };
+}
+
 // normalize DB -> UI fields in one place
 const mapGoals = (rows = []) =>
   rows.map((g) => ({
     ...g,
     title: g.title ?? g.label ?? '',
+    quarter: g.quarter ?? g.goal_quarter ?? g.meta?.quarter ?? null,
     currency_code: g.currency ?? g.currency_code ?? null,
     target: g.target ?? g.target_value ?? null,
     self_selected: g.self_selected ?? g.meta?.self_selected === true,
@@ -73,8 +200,26 @@ async function attachSubGoals(rows = []) {
 
   if (error) return mappedGoals;
 
+  const subGoalIds = (data || []).map(row => row.id);
+  let latestBySubGoal = {};
+  if (subGoalIds.length) {
+    const updatesRes = await supabase
+      .schema('app')
+      .from('goal_sub_goal_updates')
+      .select('id, sub_goal_id, status, note, created_at')
+      .in('sub_goal_id', subGoalIds)
+      .order('created_at', { ascending: false });
+
+    if (!updatesRes.error) {
+      latestBySubGoal = (updatesRes.data || []).reduce((acc, row) => {
+        if (!acc[row.sub_goal_id]) acc[row.sub_goal_id] = row;
+        return acc;
+      }, {});
+    }
+  }
+
   const byGoal = (data || []).reduce((acc, row) => {
-    (acc[row.goal_id] ||= []).push(row);
+    (acc[row.goal_id] ||= []).push({ ...row, latest_update: latestBySubGoal[row.id] || null });
     return acc;
   }, {});
   return mappedGoals.map(g => ({ ...g, sub_goals: byGoal[g.id] || [] }));
@@ -102,8 +247,12 @@ export default function StaffGoals() {
       : window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
 
-  const quarterOptions = useMemo(() => buildQuarterOptions({ years: 4 }), []);
-  const [quarter, setQuarter] = useState(currentQuarterLabel());
+  const yearOptions = useMemo(() => buildYearOptions({ years: 4 }), []);
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [periodView, setPeriodView] = useState(`Q${currentQuarterNumber()}`);
+  const quarter = periodView === 'year'
+    ? quarterLabel(year, defaultQuarterForYear(year))
+    : quarterLabel(year, Number(periodView.replace('Q', '')));
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
 
@@ -116,6 +265,7 @@ export default function StaffGoals() {
   const [editing, setEditing] = useState(null); // if null -> create; else edit goal
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
@@ -129,24 +279,46 @@ export default function StaffGoals() {
         setLoading(true);
         setErr('');
 
-        // Pull from your consolidated RPC
-        const { data, error } = await supabase
-          .schema('public')
-          .rpc('my_dashboard', { p_quarter: quarter });
+        const quartersToLoad = periodView === 'year'
+          ? quarterOptionsForYear(year)
+          : [quarter];
+
+        const results = await Promise.all(
+          quartersToLoad.map(q =>
+            supabase.schema('public').rpc('my_dashboard', { p_quarter: q })
+          )
+        );
+        const failed = results.find(r => r.error);
+        if (failed?.error) throw failed.error;
 
         if (cancel) return;
-        if (error) throw error;
 
-        setMe(data?.me || null);
+        const dashboards = results.map(r => r.data || {});
+        setMe(dashboards.find(d => d.me)?.me || null);
 
-        setGoals(await attachSubGoals(data?.goals || []));
-
-        const latestMap = Object.fromEntries(
-          (data?.latest_measurements || []).map((m) => [
-            m.goal_id,
-            { value: Number(m.value || 0), measured_at: m.measured_at },
-          ])
+        const goalsById = new Map();
+        dashboards.forEach(dashboard => {
+          (dashboard.goals || []).forEach(goal => {
+            if (!goalsById.has(goal.id)) goalsById.set(goal.id, goal);
+          });
+        });
+        const mergedGoals = Array.from(goalsById.values());
+        const visibleGoals = mergedGoals.filter(goal =>
+          periodView === 'year'
+            ? goalMatchesYear(goal, year)
+            : goalMatchesQuarter(goal, quarter)
         );
+        setGoals(await attachSubGoals(visibleGoals));
+
+        const latestMap = {};
+        dashboards.forEach(dashboard => {
+          (dashboard.latest_measurements || []).forEach((m) => {
+            const existing = latestMap[m.goal_id];
+            if (!existing || String(m.measured_at || '') > String(existing.measured_at || '')) {
+              latestMap[m.goal_id] = { value: Number(m.value || 0), measured_at: m.measured_at };
+            }
+          });
+        });
         setLatest(latestMap);
       } catch (e) {
         if (!cancel) setErr(String(e.message || e));
@@ -157,7 +329,7 @@ export default function StaffGoals() {
     return () => {
       cancel = true;
     };
-  }, [quarter]);
+  }, [periodView, quarter, refreshKey, year]);
 
 
   const groupedByOrgGoal = useMemo(() => {
@@ -333,6 +505,7 @@ function AccordionItem({
       currency_code: null,
       target: null,
       deadline: '',
+      quarter,
     });
     setShowEditor(true);
   }
@@ -349,12 +522,20 @@ function AccordionItem({
       currency_code: goal.currency_code || null,
       target: goal.target ?? null,
       deadline: goal.deadline || '',
+      quarter: goal.quarter || quarter,
     });
     setShowEditor(true);
   }
 
   async function saveGoal() {
     if (!editing) return;
+    const validationError = validateGoalDraft(editing);
+    if (validationError) {
+      setErr(validationError);
+      return;
+    }
+
+    const payloadValues = goalPayloadValues(editing);
     setSaving(true);
     setErr('');
     try {
@@ -365,14 +546,11 @@ function AccordionItem({
           p_description: editing.description || null,
           p_category: editing.category,
           p_measure_type: editing.measure_type,
-          p_unit: editing.unit || null,
-          p_target_value:
-            editing.target === null || editing.target === ''
-              ? null
-              : Number(editing.target),
+          p_unit: payloadValues.unit,
+          p_target_value: payloadValues.targetValue,
           p_deadline: editing.deadline || null,
-          p_currency: editing.currency_code || null,
-          p_quarter: quarter, // <-- from the dropdown
+          p_currency: payloadValues.currency,
+          p_quarter: editing.quarter || quarter,
         });
         if (error) throw error;
         setToast('Goal added.');
@@ -384,23 +562,18 @@ function AccordionItem({
           p_description: editing.description || null,
           p_category: editing.category || null,
           p_measure_type: editing.measure_type || null,
-          p_unit: editing.unit || null,
-          p_target_value:
-            editing.target === null || editing.target === ''
-              ? null
-              : Number(editing.target),
+          p_unit: payloadValues.unit,
+          p_target_value: payloadValues.targetValue,
           p_deadline: editing.deadline || null,
-          p_currency: editing.currency_code || null,
+          p_currency: payloadValues.currency,
         });
         if (error) throw error;
         setToast('Goal updated.');
       }
       setShowEditor(false);
-      // refresh
-      const { data } = await supabase.schema('public').rpc('my_dashboard', { p_quarter: quarter });
-      setGoals(await attachSubGoals(data?.goals || []));
+      setRefreshKey(k => k + 1);
     } catch (e) {
-      setErr(String(e.message || e));
+      setErr(friendlyGoalError(e));
     } finally {
       setSaving(false);
       setTimeout(() => setToast(''), 1500);
@@ -418,11 +591,7 @@ function AccordionItem({
         .rpc('delete_self_goal', { p_goal_id: goal.id });
       if (error) throw error;
       setToast('Goal removed.');
-      // refresh
-      const { data } = await supabase
-        .schema('public')
-        .rpc('my_dashboard', { p_quarter: quarter });
-      setGoals(await attachSubGoals(data?.goals || []));
+      setRefreshKey(k => k + 1);
     } catch (e) {
       setErr(String(e.message || e));
     } finally {
@@ -471,6 +640,11 @@ function AccordionItem({
               ))}
               {g.sub_goals.length > 3 && (
                 <span className="text-[11px] muted">+{g.sub_goals.length - 3} more</span>
+              )}
+              {g.sub_goals.some(s => s.latest_update?.note) && (
+                <div className="basis-full text-[11px] muted line-clamp-1">
+                  Latest update: {g.sub_goals.find(s => s.latest_update?.note)?.latest_update?.note}
+                </div>
               )}
             </div>
           )}
@@ -531,18 +705,37 @@ function AccordionItem({
         <div className="flex items-center justify-between px-6 py-4 toolbar sticky top-14 z-10 shadow ml-[var(--sidebar-w)] transition-[margin] duration-200">
           <div>
             <h1 className="text-2xl font-bold">My Goals</h1>
-            <p className="text-sm muted">Assigned goals & goals you add yourself</p>
+            <p className="text-sm muted">
+              {periodView === 'year'
+                ? `Full-year overview for ${year}`
+                : `Assigned and self-added goals for ${quarter}`}
+            </p>
           </div>
-          <div className="flex gap-3 items-center">
+          <div className="flex flex-wrap justify-end gap-3 items-center">
             <select
-              value={quarter}
-              onChange={(e) => setQuarter(e.target.value)}
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value))}
               className="px-3 py-2 border rounded-lg bg-[var(--card)] border-[var(--border)]"
             >
-              {quarterOptions.map((q) => (
-                <option key={q}>{q}</option>
+              {yearOptions.map((y) => (
+                <option key={y} value={y}>{y}</option>
               ))}
             </select>
+            <div className="inline-flex rounded-lg border border-[var(--border)] bg-[var(--card)] p-1">
+              {['Q1', 'Q2', 'Q3', 'Q4', 'year'].map((view) => (
+                <button
+                  key={view}
+                  type="button"
+                  onClick={() => setPeriodView(view)}
+                  className={[
+                    'rounded-md px-3 py-1.5 text-sm',
+                    periodView === view ? 'bg-[var(--accent)] text-white' : 'text-[var(--fg-muted)] hover:text-[var(--fg)]',
+                  ].join(' ')}
+                >
+                  {view === 'year' ? 'Year' : view}
+                </button>
+              ))}
+            </div>
             <a
               href="/staff/self-review"
               className="px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)]"
@@ -745,7 +938,13 @@ function AccordionItem({
                   className="w-full border border-[var(--border)] rounded p-2 bg-[var(--card)]"
                   value={editing.measure_type}
                   onChange={(e) =>
-                    setEditing((s) => ({ ...s, measure_type: e.target.value }))
+                    setEditing((s) => ({
+                      ...s,
+                      measure_type: e.target.value,
+                      target: e.target.value === 'qualitative' ? null : s.target,
+                      unit: e.target.value === 'numeric' ? s.unit : '',
+                      currency_code: e.target.value === 'monetary' ? (s.currency_code || 'USD') : null,
+                    }))
                   }
                 >
                   <option value="numeric">Numeric</option>
@@ -821,6 +1020,21 @@ function AccordionItem({
                     setEditing((s) => ({ ...s, deadline: e.target.value }))
                   }
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm mb-1">Review period</label>
+                <select
+                  className="w-full border border-[var(--border)] rounded p-2 bg-[var(--card)]"
+                  value={editing.quarter || quarter}
+                  onChange={(e) =>
+                    setEditing((s) => ({ ...s, quarter: e.target.value }))
+                  }
+                >
+                  {quarterOptionsForYear(year).map((q) => (
+                    <option key={q} value={q}>{q}</option>
+                  ))}
+                </select>
               </div>
             </div>
 

@@ -23,6 +23,7 @@ import AiCoaching from "@/components/AiCoaching";
 import AddWidgetDialog from "@/components/AddWidgetDialog";
 import useSearchParamsState from "@/hooks/useSearchParamsState";
 import StaffDashboard from "./staff/StaffDashboard";
+import { supabase } from "@/lib/supabaseClient";
 
 const periodOptions = [
   ...buildQuarterOptions({yearsBack: 0, yearsForward: 0}), // Q1..Q4 of current year
@@ -30,14 +31,6 @@ const periodOptions = [
   "Last Year",
 ];
 
-function startOfQuarter(d = new Date()) {
-  const q = Math.floor(d.getMonth() / 3); // 0..3
-  return new Date(d.getFullYear(), q * 3, 1);
-}
-function endOfQuarter(d = new Date()) {
-  const s = startOfQuarter(d);
-  return new Date(s.getFullYear(), s.getMonth() + 3, 0, 23, 59, 59, 999);
-}
 function startOfYear(y = new Date().getFullYear()) {
   return new Date(y, 0, 1);
 }
@@ -97,6 +90,10 @@ function periodFromLabel(label, now = new Date()) {
     start: startOfYear(thisYear),
     end: endOfYear(thisYear),
   };
+}
+
+function formatDateKey(date) {
+  return date instanceof Date ? date.toISOString().slice(0, 10) : "";
 }
 
 export default function Dashboard() {
@@ -159,6 +156,11 @@ useEffect(() => {
   );
   const [department, setDepartment] = useState("All Departments");
   const [location, setLocation] = useState("");
+  const [dashboardMetrics, setDashboardMetrics] = useState({
+    goalsOnTrackPct: "—",
+    openAlerts: "—",
+    trendPct: "—",
+  });
 
   useSearchParamsState(
     {view, period: periodLabel, dept: department, loc: location},
@@ -169,6 +171,67 @@ useEffect(() => {
       loc: setLocation,
     }
   );
+
+  const dashboardFilterKey = React.useMemo(
+    () => [
+      refreshKey,
+      view,
+      managerView,
+      periodLabel,
+      formatDateKey(period.start),
+      formatDateKey(period.end),
+      department,
+      location,
+    ].join("|"),
+    [refreshKey, view, managerView, periodLabel, period.start, period.end, department, location]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadDashboardMetrics() {
+      if (!orgId || !period?.start || !period?.end) {
+        setDashboardMetrics({ goalsOnTrackPct: "—", openAlerts: "—", trendPct: "—" });
+        return;
+      }
+
+      const goalParams = {
+        p_org_id: orgId,
+        p_start: period.start.toISOString(),
+        p_end: period.end.toISOString(),
+        p_department: department && department !== "All Departments" ? department : null,
+        p_location: location && location !== "All Locations" ? location : null,
+      };
+
+      const [goalsRes, alertsRes] = await Promise.all([
+        supabase.rpc("org_goals_progress_period", goalParams),
+        supabase.schema("public").rpc("org_alerts", { p_org_id: orgId, p_limit: 100 }),
+      ]);
+
+      if (cancelled) return;
+
+      const goalRows = goalsRes.error ? [] : goalsRes.data || [];
+      const measurableGoals = goalRows.filter((row) => Number(row.target_value) > 0);
+      const onTrack = measurableGoals.filter((row) => {
+        const current = Number(row.current_value ?? 0);
+        const target = Number(row.target_value ?? 0);
+        return target > 0 && current >= target * 0.7;
+      }).length;
+
+      const goalsOnTrackPct = measurableGoals.length
+        ? `${Math.round((onTrack / measurableGoals.length) * 100)}%`
+        : "—";
+
+      setDashboardMetrics({
+        goalsOnTrackPct,
+        openAlerts: alertsRes.error ? "—" : String((alertsRes.data || []).length),
+        trendPct: period.kind === "year" ? `${period.year}` : `Q${period.quarter}`,
+      });
+    }
+
+    loadDashboardMetrics();
+    return () => { cancelled = true; };
+  }, [orgId, period?.start, period?.end, period?.kind, period?.quarter, period?.year, department, location]);
 
   // sync initial location to first available org location
   useEffect(() => {
@@ -278,12 +341,10 @@ useEffect(() => {
 
               {headcount > 0 && (
                 <StatKpiRow
-                  key={refreshKey} // refresh when key changes
+                  key={`stats-${dashboardFilterKey}`}
                   metrics={{
                     headcount,
-                    goalsOnTrackPct: "62%",
-                    openAlerts: 3,
-                    trendPct: "+8%",
+                    ...dashboardMetrics,
                   }}
                 />
               )}
@@ -292,7 +353,7 @@ useEffect(() => {
                 headcount > 0 ? (
                   <ErrorBoundary>
                     <IndividualLeaderboard
-                      key={refreshKey} // refresh when key changes
+                      key={`individual-${dashboardFilterKey}`}
                       period={period}
                       department={department}
                       location={location}
@@ -318,7 +379,7 @@ useEffect(() => {
                     <div className="h-full">
                       {headcount > 0 ? (
                         <TeamPerformanceChart
-                          key={refreshKey} // refresh when key changes
+                          key={`team-${dashboardFilterKey}`}
                           period={period}
                           department={department}
                           location={location}
@@ -333,6 +394,7 @@ useEffect(() => {
                     <div className="h-full">
                       {headcount > 0 ? (
                         <GoalProgress
+                          key={`goals-${dashboardFilterKey}`}
                           period={period}
                           department={department}
                           location={location}
@@ -369,7 +431,7 @@ useEffect(() => {
       <AddWidgetDialog
         open={addOpen}
         onClose={() => setAddOpen(false)}
-        onAdd={(key) => {
+        onAdd={() => {
           setAddOpen(false); /* route or insert widget */
         }}
       />

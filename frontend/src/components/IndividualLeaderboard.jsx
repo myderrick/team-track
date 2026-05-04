@@ -9,7 +9,6 @@ import LagIndicatorCard from '@/components/LagIndicatorCard';
 import FeedbackSkillsCard from '@/components/FeedbackSkillsCard';
 import EmptyState from '@/components/EmptyState';
 import SparklineCardPro from './SparkLineCardPro';
-import { useKpiSeries } from '@/hooks/useKpiSeries';
 import TrainingCardPro from './TrainingCardPro';
 
 // ---------- helpers ----------
@@ -30,7 +29,7 @@ function normalizePeriodInput(input) {
     if (typeof input.label === 'string' && /^Q[1-4]\s+\d{4}$/.test(input.label))
       return { rpc: input.label, label: input.label };
     if (input.kind === 'year' && typeof input.label === 'string')
-      return { rpc: null, label: input.label };
+      return { rpc: input.label, label: input.label };
     if (input.start && input.end) {
       const start = String(input.start).slice(0, 10);
       const end = String(input.end).slice(0, 10);
@@ -38,6 +37,80 @@ function normalizePeriodInput(input) {
     }
   }
   return { rpc: null, label: 'All time' };
+}
+
+function dateOnly(value) {
+  return value ? String(value).slice(0, 10) : null;
+}
+
+function parseQuarterLabel(label) {
+  const match = String(label || '').match(/^Q([1-4])\s+(\d{4})$/i);
+  return match ? { quarter: Number(match[1]), year: Number(match[2]) } : null;
+}
+
+function quarterDateRange(label) {
+  const parsed = parseQuarterLabel(label);
+  if (!parsed) return null;
+  const startMonth = (parsed.quarter - 1) * 3 + 1;
+  const endMonth = startMonth + 2;
+  const lastDay = new Date(parsed.year, endMonth, 0).getDate();
+  return {
+    start: `${parsed.year}-${String(startMonth).padStart(2, '0')}-01`,
+    end: `${parsed.year}-${String(endMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`,
+  };
+}
+
+function yearDateRange(year) {
+  return { start: `${year}-01-01`, end: `${year}-12-31` };
+}
+
+function rangesOverlap(aStart, aEnd, bStart, bEnd) {
+  return !!aStart && !!aEnd && aStart <= bEnd && aEnd >= bStart;
+}
+
+function goalQuarter(goal) {
+  return goal.quarter || goal.goal_quarter || goal.meta?.quarter || null;
+}
+
+function goalPeriodYear(goal) {
+  const fromPeriod = goal.period_year || goal.meta?.period_year;
+  const fromQuarter = parseQuarterLabel(goalQuarter(goal))?.year;
+  const fromDeadline = dateOnly(goal.deadline || goal.due_date || goal.end_date)?.slice(0, 4);
+  return Number(fromPeriod || fromQuarter || fromDeadline) || null;
+}
+
+function goalDateWindow(goal) {
+  const start = dateOnly(goal.period_start_date || goal.start_date || goal.meta?.period_start_date);
+  const end = dateOnly(goal.period_end_date || goal.deadline || goal.end_date || goal.meta?.period_end_date);
+  return { start, end };
+}
+
+function goalMatchesPeriod(goal, period) {
+  if (!period || !period.kind) return true;
+
+  const periodType = goal.period_type || goal.meta?.period_type || null;
+
+  if (period.kind === 'quarter') {
+    const selectedQuarter = `Q${period.quarter} ${period.year}`;
+    if (periodType === 'annual' && goalPeriodYear(goal) === period.year) return true;
+
+    const explicitQuarter = goalQuarter(goal);
+    if (explicitQuarter) return explicitQuarter === selectedQuarter;
+
+    const selectedRange = quarterDateRange(selectedQuarter);
+    const goalRange = goalDateWindow(goal);
+    return !!selectedRange && rangesOverlap(goalRange.start, goalRange.end, selectedRange.start, selectedRange.end);
+  }
+
+  if (period.kind === 'year') {
+    if (goalPeriodYear(goal) === period.year) return true;
+
+    const selectedRange = yearDateRange(period.year);
+    const goalRange = goalDateWindow(goal);
+    return rangesOverlap(goalRange.start, goalRange.end, selectedRange.start, selectedRange.end);
+  }
+
+  return true;
 }
 
 async function rpcSafe(name, args) {
@@ -49,8 +122,8 @@ async function rpcSafe(name, args) {
   return r;
 }
 
-function normalizeMetricsRow(row) {
-  const overallPct = Math.round(Number(row?.overall_score_pct ?? 0));
+function normalizeMetricsRow(row, period) {
+  const hasSelectedPeriod = !!period?.kind;
   const trend = row?.trend_pct ?? '+0%';
   const trendType = (row?.trend_dir ?? 'up') === 'down' ? 'down' : 'up';
   const lagDays = Number(row?.lag_days ?? 0);
@@ -63,15 +136,15 @@ function normalizeMetricsRow(row) {
       {
         value:
           m.measure_type === 'numeric' || m.measure_type === 'monetary'
-            ? m.value_in_period ?? m.value_all_time ?? null
+            ? (hasSelectedPeriod ? m.value_in_period ?? null : m.value_all_time ?? null)
             : null,
         measured_at:
           m.measure_type === 'numeric' || m.measure_type === 'monetary'
-            ? m.measured_at_in_period ?? m.measured_at_all_time ?? null
-            : m.qual_measured_at_in_period ?? m.qual_measured_at_all_time ?? null,
+            ? (hasSelectedPeriod ? m.measured_at_in_period ?? null : m.measured_at_all_time ?? null)
+            : (hasSelectedPeriod ? m.qual_measured_at_in_period ?? null : m.qual_measured_at_all_time ?? null),
         qual_status:
           m.measure_type === 'qualitative'
-            ? m.qual_status_in_period ?? m.qual_status_all_time ?? null
+            ? (hasSelectedPeriod ? m.qual_status_in_period ?? null : m.qual_status_all_time ?? null)
             : null,
         measure_type: m.measure_type,
         unit: m.unit || '',
@@ -90,10 +163,13 @@ function normalizeMetricsRow(row) {
     return 0;
   };
 
-  const goals = (Array.isArray(row?.goals) ? row.goals : []).map((g) => {
+  const goals = (Array.isArray(row?.goals) ? row.goals : [])
+  .filter((g) => goalMatchesPeriod(g, period))
+  .map((g) => {
     const goalId = g.goal_id ?? g.id;
     const latestVal = latestByGoalId[String(goalId)]?.value;
-    const current = Number(latestVal ?? g.current ?? g.current_value ?? 0);
+    const currentRaw = latestVal ?? (hasSelectedPeriod ? null : g.current ?? g.current_value ?? 0);
+    const current = currentRaw == null ? null : Number(currentRaw);
     const target = g.target ?? g.target_value ?? null;
     const start = g.start ?? g.start_value ?? 0;
 
@@ -108,6 +184,10 @@ function normalizeMetricsRow(row) {
       percent: pctFrom(current, target, start),
     };
   });
+
+  const overallPct = goals.length
+    ? Math.round(goals.reduce((sum, goal) => sum + Number(goal.percent || 0), 0) / goals.length)
+    : Math.round(Number(row?.overall_score_pct ?? 0));
 
   return {
     overall: { scorePct: overallPct, trend, trendType },
@@ -198,13 +278,13 @@ if (!orgId || !employeeIds.length) return setMetricsLoading(false);
       if (error) setMetricsError(error.message);
       else {
         const map = {};
-        (data || []).forEach((row) => (map[row.employee_id] = normalizeMetricsRow(row)));
+        (data || []).forEach((row) => (map[row.employee_id] = normalizeMetricsRow(row, period)));
         setMetricsByEmp(map);
       }
       setMetricsLoading(false);
     })();
     return () => (cancelled = true);
-  }, [orgId, periodKey, employeeIdsKey]);
+  }, [orgId, periodKey, periodRpc, period, employeeIdsKey, employeeIds]);
 
   // ---------- Loading & Error states ----------
   if (loading)

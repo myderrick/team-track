@@ -654,10 +654,33 @@ const alignment_label = form.alignmentObj?.label || 'None';
       if (editingId) {
         const { error } = await supabase.schema('app').from('goals').update(payload).eq('id', editingId);
         if (error) throw error;
-        await supabase.schema('app').from('goal_assignments').delete().eq('goal_id', editingId);
-        if (form.assignees.length > 0) {
-          const rows = form.assignees.map(a => ({ goal_id: editingId, employee_id: a.id }));
-          const { error: assignError } = await supabase.schema('app').from('goal_assignments').insert(rows);
+
+        const { data: existingAssignments, error: existingAssignError } = await supabase
+          .schema('app')
+          .from('goal_assignments')
+          .select('employee_id')
+          .eq('goal_id', editingId);
+        if (existingAssignError) throw existingAssignError;
+
+        const existingIds = new Set((existingAssignments || []).map(a => String(a.employee_id)));
+        const nextIds = new Set((form.assignees || []).map(a => String(a.id)));
+        const toRemove = [...existingIds].filter(id => !nextIds.has(id));
+        const toAdd = (form.assignees || [])
+          .filter(a => !existingIds.has(String(a.id)))
+          .map(a => ({ goal_id: editingId, employee_id: a.id }));
+
+        if (toRemove.length > 0) {
+          const { error: removeError } = await supabase
+            .schema('app')
+            .from('goal_assignments')
+            .delete()
+            .eq('goal_id', editingId)
+            .in('employee_id', toRemove);
+          if (removeError) throw removeError;
+        }
+
+        if (toAdd.length > 0) {
+          const { error: assignError } = await supabase.schema('app').from('goal_assignments').insert(toAdd);
           if (assignError) throw assignError;
         }
         await persistSubGoals(editingId);

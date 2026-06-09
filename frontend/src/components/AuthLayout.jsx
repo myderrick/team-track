@@ -12,9 +12,7 @@ export default function AuthLayout({ title, subtitle, children }) {
         {/* top brand row */}
         <div className="flex items-center justify-between mb-10">
           <Link to="/" className="flex items-center gap-2">
-            {/* drop your logo here */}
-            <div className="h-8 w-8 rounded-xl bg-purple-500" />
-            <span className="font-semibold tracking-tight">Team-Track</span>
+            <img src="/teamtrack-mono-black.svg" alt="Team Track" className="h-11 w-auto" />
           </Link>
         </div>
 

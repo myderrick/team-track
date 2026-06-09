@@ -6,8 +6,8 @@ import {
   ChartBarSquareIcon, ArrowDownLeftIcon, QuestionMarkCircleIcon, ArrowRightEndOnRectangleIcon,
   PencilSquareIcon, ChevronDoubleLeftIcon, ChevronDoubleRightIcon
 } from '@heroicons/react/24/outline';
-import logo from '../assets/teamtrack.png';
 import { useSidebarPin } from '@/theme/SidebarPinProvider';
+import { useDarkMode } from '@/theme/DarkModeProvider';
 
 const ORG_ITEMS = [
   { label: 'Home', href: '/dashboard', Icon: HomeIcon },
@@ -32,6 +32,9 @@ const STAFF_ITEMS = [
 export default function Sidebar({ variant }) {
   const { pathname } = useLocation();
   const { pinned, togglePinned } = useSidebarPin();
+  const { isDark } = useDarkMode();
+  const logo = isDark ? '/teamtrack-reversed-white.svg' : '/teamtrack-mono-black.svg';
+  const icon = '/teamtrack-icon-cobalt.svg';
   const mode = useMemo(() => (variant ? variant : pathname.startsWith('/staff') ? 'staff' : 'org'), [variant, pathname]);
   const navItems = mode === 'staff' ? STAFF_ITEMS : ORG_ITEMS;
 
@@ -53,7 +56,14 @@ export default function Sidebar({ variant }) {
       >
         {/* Header: logo + pin toggle */}
         <div className="relative flex items-center justify-center h-16">
-          <img src={logo} alt="Team Track" className="h-8 w-auto" />
+          {pinned ? (
+            <img src={logo} alt="Team Track" className="h-11 w-auto" />
+          ) : (
+            <>
+              <img src={icon} alt="Team Track" className="h-10 w-auto group-hover:hidden" />
+              <img src={logo} alt="Team Track" className="h-11 w-auto hidden group-hover:block" />
+            </>
+          )}
           <button
             type="button"
             onClick={togglePinned}

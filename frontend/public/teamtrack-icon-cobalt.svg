@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="Team Track icon">
+  <g fill="none" stroke="#2D5BE3" stroke-width="3.5" stroke-linejoin="round">
+    <rect x="18" y="33" width="84" height="54" rx="27"/>
+    <rect x="31" y="45" width="58" height="30" rx="15"/>
+    <rect x="43" y="54" width="34" height="12" rx="6"/>
+  </g>
+  <circle cx="60" cy="33" r="5" fill="#2D5BE3"/>
+</svg>

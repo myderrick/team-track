@@ -8,6 +8,8 @@ import Login from '@/pages/Login';
 import SignUp from '@/pages/SignUp';
 import AddEmployee from '@/pages/AddEmployee';
 import AuthCallback from '@/pages/AuthCallback';
+import ForgotPassword from '@/pages/ForgotPassword';
+import ResetPassword from '@/pages/ResetPassword';
 import Onboarding from '@/pages/Onboarding';
 import Dashboard from '@/pages/Dashboard';
 import GoalsPage from '@/pages/GoalsPage';
@@ -37,6 +39,8 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<SignUp />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
                       <Route path="/staff/register" element={<StaffRegister />} />
 
 

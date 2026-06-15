@@ -23,7 +23,9 @@ export default function ForgotPassword() {
     }
 
     setBusy(true);
-    const redirectTo = `${window.location.origin}/auth/callback?type=recovery`;
+    // Send recovery links straight to the reset page so the token is consumed
+    // there in a single page load (no intermediate navigation that can drop it).
+    const redirectTo = `${window.location.origin}/reset-password`;
     const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
     setBusy(false);
 

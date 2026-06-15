@@ -18,17 +18,51 @@ export default function ResetPassword() {
   const [checking, setChecking] = useState(true);
   const [hasSession, setHasSession] = useState(false);
 
-  // AuthCallback establishes a recovery session before redirecting here.
+  // Consume the recovery token directly on this page. Supabase appends auth
+  // params either as a query (?code=… / ?error=…) for the PKCE flow or in the
+  // URL hash (#access_token=… / #error=…) for the implicit flow, so read both.
   useEffect(() => {
     let active = true;
-    (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!active) return;
-      setHasSession(Boolean(session));
+    let settled = false;
+    const finish = (ok) => {
+      if (!active || settled) return;
+      settled = true;
+      setHasSession(ok);
       setChecking(false);
+    };
+
+    // detectSessionInUrl consumes a hash token asynchronously and fires this.
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session && (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN')) {
+        finish(true);
+      }
+    });
+
+    (async () => {
+      const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const errDesc =
+        params.get('error_description') || params.get('error') ||
+        hash.get('error_description') || hash.get('error');
+      if (errDesc) return finish(false);
+
+      // PKCE flow: exchange the code in the URL for a recovery session.
+      const code = params.get('code');
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(window.location.href);
+        return finish(!error);
+      }
+
+      // Session may already be present (hash consumed on load, or arrived here
+      // with a live recovery session).
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) return finish(true);
+
+      // Otherwise give the hash-detection listener a brief moment before failing.
+      setTimeout(() => finish(false), 2000);
     })();
-    return () => { active = false; };
-  }, []);
+
+    return () => { active = false; sub.subscription.unsubscribe(); };
+  }, [params]);
 
   async function updatePassword(e) {
     e.preventDefault();

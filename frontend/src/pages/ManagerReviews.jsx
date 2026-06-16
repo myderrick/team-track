@@ -364,7 +364,13 @@ function EmployeeList({rows, selectedId, onSelect, onRefresh}) {
       />
       <CardContent sx={{pt: 0, overflow: "auto"}}>
         <List dense>
-          {rows.map((r) => (
+          {rows.length === 0 ? (
+            <Box sx={{px: 2, py: 3}}>
+              <Typography variant="body2" color="text.secondary">
+                No team members assigned yet.
+              </Typography>
+            </Box>
+          ) : rows.map((r) => (
             <ListItem key={r.employee_id} disablePadding>
               <ListItemButton
                 selected={selectedId === r.employee_id}
@@ -1018,7 +1024,17 @@ onSelect={(r) =>
                 />
                 <Divider />
 
-                {wsLoading || !workspace ? (
+                {!selected ? (
+                  <Box sx={{p: 4}}>
+                    <Alert severity="info" icon={false}>
+                      {loading
+                        ? "Loading your team…"
+                        : employees.length === 0
+                          ? "You don't have any team members assigned to you yet. Once employees report to you, they'll appear here for review."
+                          : "Select a team member from the list to start their review."}
+                    </Alert>
+                  </Box>
+                ) : wsLoading || !workspace ? (
                   <Box sx={{p: 3}}>
                     <LinearProgress />
                   </Box>

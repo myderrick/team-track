@@ -8,6 +8,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { useSidebarPin } from '@/theme/SidebarPinProvider';
 import { useDarkMode } from '@/theme/DarkModeProvider';
+import { useOrg } from '@/context/OrgContext';
 
 const ORG_ITEMS = [
   { label: 'Home', href: '/dashboard', Icon: HomeIcon },
@@ -33,10 +34,17 @@ export default function Sidebar({ variant }) {
   const { pathname } = useLocation();
   const { pinned, togglePinned } = useSidebarPin();
   const { isDark } = useDarkMode();
+  const { myActiveRole } = useOrg();
   const logo = isDark ? '/teamtrack-reversed-white.svg' : '/teamtrack-mono-black.svg';
   const icon = '/teamtrack-icon-cobalt.svg';
   const mode = useMemo(() => (variant ? variant : pathname.startsWith('/staff') ? 'staff' : 'org'), [variant, pathname]);
-  const navItems = mode === 'staff' ? STAFF_ITEMS : ORG_ITEMS;
+  const isAdmin = myActiveRole === 'owner' || myActiveRole === 'admin';
+  const navItems = useMemo(() => {
+    const base = mode === 'staff' ? STAFF_ITEMS : ORG_ITEMS;
+    // Owner/admin-only items. Managers use Manager Reviews for their own team.
+    const ADMIN_ONLY = new Set(['/admin', '/performancereviews']);
+    return base.filter((item) => !ADMIN_ONLY.has(item.href) || isAdmin);
+  }, [mode, isAdmin]);
 
   // When pinned: stay expanded. When not: collapsed with hover-expand overlay.
   const widthCls = pinned ? 'w-64' : 'w-16 group-hover:w-64';

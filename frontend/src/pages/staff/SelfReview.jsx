@@ -4,7 +4,7 @@ import Sidebar from '@/components/Sidebar';
 import TopBar from '@/components/TopBar';
 import EmptyState from '@/components/EmptyState';
 import { supabase } from '@/lib/supabaseClient';
-import { Loader2, Target, DollarSign, Flag, Plus, Check, X } from 'lucide-react';
+import { Loader2, Target, DollarSign, Flag, Plus, Check, X, Star, CheckCircle2 } from 'lucide-react';
 
 // ---------- helpers (module scope) ----------
 const coerceNum = (v) => {
@@ -211,6 +211,7 @@ export default function SelfReview() {
   const [subGoalDrafts, setSubGoalDrafts] = useState({});
   const [expandedSubGoals, setExpandedSubGoals] = useState({});
   const [toast, setToast] = useState('');
+  const [view, setView] = useState('self'); // 'self' | 'manager'
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
@@ -570,10 +571,29 @@ export default function SelfReview() {
         {/* Filters */}
         <div className="toolbar flex items-center justify-between px-6 py-4 sticky top-14 z-10 shadow ml-[var(--sidebar-w)] transition-[margin] duration-200">
           <div>
-            <h1 className="text-2xl font-bold">Self-Review</h1>
-            <p className="text-sm muted">Update progress and add your self-assessment for {quarter}</p>
+            <h1 className="text-2xl font-bold">{view === 'manager' ? 'My Review' : 'Self-Review'}</h1>
+            <p className="text-sm muted">
+              {view === 'manager'
+                ? `Your manager's review for ${quarter}`
+                : `Update progress and add your self-assessment for ${quarter}`}
+            </p>
           </div>
           <div className="flex flex-wrap justify-end gap-3 items-center">
+            <div className="inline-flex rounded-lg border border-[var(--border)] bg-[var(--card)] p-1">
+              {[['self', 'Self-Review'], ['manager', 'Manager Review']].map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setView(key)}
+                  className={[
+                    'rounded-md px-3 py-1.5 text-sm',
+                    view === key ? 'bg-[var(--accent)] text-white' : 'text-[var(--fg-muted)] hover:text-[var(--fg)]',
+                  ].join(' ')}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <select
               value={year}
               onChange={e => setYear(Number(e.target.value))}
@@ -610,44 +630,50 @@ export default function SelfReview() {
             <>
               {toast && <div className="mb-3 text-sm text-green-600">{toast}</div>}
 
-              <div className="grid gap-3 sm:grid-cols-4 mb-4">
-                <SummaryTile label="Goals" value={reviewSummary.total} />
-                <SummaryTile label="Updated" value={reviewSummary.reviewed} />
-                <SummaryTile label="Pending" value={reviewSummary.pending} />
-                <SummaryTile
-                  label="Sub-goals"
-                  value={`${reviewSummary.completedSubGoals}/${reviewSummary.subGoals}`}
-                />
-              </div>
+              {view === 'manager' ? (
+                <ManagerReviewTab quarter={quarter} />
+              ) : (
+                <>
+                  <div className="grid gap-3 sm:grid-cols-4 mb-4">
+                    <SummaryTile label="Goals" value={reviewSummary.total} />
+                    <SummaryTile label="Updated" value={reviewSummary.reviewed} />
+                    <SummaryTile label="Pending" value={reviewSummary.pending} />
+                    <SummaryTile
+                      label="Sub-goals"
+                      value={`${reviewSummary.completedSubGoals}/${reviewSummary.subGoals}`}
+                    />
+                  </div>
 
-              <GoalSection
-                title="Assigned goals"
-                empty="No assigned goals"
-                items={assignedGoals}
-                onAddProgress={openProgress}
-                onWriteReview={openReview}
-                onSaveSubGoalUpdate={saveSubGoalUpdate}
-                subGoalSaving={subGoalSaving}
-                subGoalDrafts={subGoalDrafts}
-                setSubGoalDrafts={setSubGoalDrafts}
-                expandedSubGoals={expandedSubGoals}
-                setExpandedSubGoals={setExpandedSubGoals}
-              />
+                  <GoalSection
+                    title="Assigned goals"
+                    empty="No assigned goals"
+                    items={assignedGoals}
+                    onAddProgress={openProgress}
+                    onWriteReview={openReview}
+                    onSaveSubGoalUpdate={saveSubGoalUpdate}
+                    subGoalSaving={subGoalSaving}
+                    subGoalDrafts={subGoalDrafts}
+                    setSubGoalDrafts={setSubGoalDrafts}
+                    expandedSubGoals={expandedSubGoals}
+                    setExpandedSubGoals={setExpandedSubGoals}
+                  />
 
-              <GoalSection
-                title="My added goals"
-                subtitle="Marked as self-selected"
-                empty="No self-selected goals"
-                items={selfSelectedGoals}
-                onAddProgress={openProgress}
-                onWriteReview={openReview}
-                onSaveSubGoalUpdate={saveSubGoalUpdate}
-                subGoalSaving={subGoalSaving}
-                subGoalDrafts={subGoalDrafts}
-                setSubGoalDrafts={setSubGoalDrafts}
-                expandedSubGoals={expandedSubGoals}
-                setExpandedSubGoals={setExpandedSubGoals}
-              />
+                  <GoalSection
+                    title="My added goals"
+                    subtitle="Marked as self-selected"
+                    empty="No self-selected goals"
+                    items={selfSelectedGoals}
+                    onAddProgress={openProgress}
+                    onWriteReview={openReview}
+                    onSaveSubGoalUpdate={saveSubGoalUpdate}
+                    subGoalSaving={subGoalSaving}
+                    subGoalDrafts={subGoalDrafts}
+                    setSubGoalDrafts={setSubGoalDrafts}
+                    expandedSubGoals={expandedSubGoals}
+                    setExpandedSubGoals={setExpandedSubGoals}
+                  />
+                </>
+              )}
             </>
           )}
         </main>
@@ -1090,6 +1116,228 @@ function Modal({ title, onClose, children }) {
         </div>
         {children}
       </div>
+    </div>
+  );
+}
+
+/* ---------- Manager review (read-only, staff side) ---------- */
+const RECOMMENDATION_LABELS = {
+  promotion: 'Promotion',
+  maintain: 'Maintain role',
+  pip: 'Improvement plan',
+};
+
+function StarRow({ value = 0, max = 5 }) {
+  const v = Math.max(0, Math.min(max, Math.round(Number(value) || 0)));
+  return (
+    <span className="inline-flex items-center gap-0.5" title={`${v}/${max}`}>
+      {Array.from({ length: max }).map((_, i) => (
+        <Star
+          key={i}
+          className={`w-4 h-4 ${i < v ? 'fill-[var(--accent)] text-[var(--accent)]' : 'text-[var(--border)]'}`}
+        />
+      ))}
+    </span>
+  );
+}
+
+function ManagerReviewTab({ quarter }) {
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const [unavailable, setUnavailable] = useState(false); // RPC not deployed yet
+  const [review, setReview] = useState(null);
+  const [response, setResponse] = useState('');
+  const [ackSaving, setAckSaving] = useState(false);
+  const [ackToast, setAckToast] = useState('');
+
+  const load = React.useCallback(async () => {
+    setLoading(true); setErr(''); setUnavailable(false);
+    const r = await rpcSafe('staff_my_review', { p_quarter: quarter });
+    if (r.error) {
+      if (isFnMissing(r)) setUnavailable(true);
+      else setErr(r.error.message || String(r.error));
+      setLoading(false);
+      return;
+    }
+    const data = Array.isArray(r.data) ? r.data[0] : r.data;
+    setReview(data || null);
+    setResponse(data?.acknowledgement_response || '');
+    setLoading(false);
+  }, [quarter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function acknowledge() {
+    setAckSaving(true); setErr('');
+    const r = await rpcSafe('staff_acknowledge_review', { p_quarter: quarter, p_response: response || null });
+    setAckSaving(false);
+    if (r.error) {
+      if (isFnMissing(r)) setUnavailable(true);
+      else setErr(friendlyStaffActionError(r.error));
+      return;
+    }
+    setAckToast('Review acknowledged.');
+    setTimeout(() => setAckToast(''), 1500);
+    load();
+  }
+
+  if (loading) return <div className="p-6 text-sm muted">Loading…</div>;
+
+  if (unavailable) {
+    return (
+      <EmptyState
+        title="Manager review coming soon"
+        subtitle="Your manager's review will appear here once it's published for this period."
+      />
+    );
+  }
+
+  if (err) return <div className="p-6"><EmptyState title="Unable to load" subtitle={err} /></div>;
+
+  const isFinalized =
+    review && ['finalized', 'submitted', 'completed'].includes(String(review.status || '').toLowerCase());
+
+  if (!review || !isFinalized) {
+    return (
+      <EmptyState
+        title="No published review yet"
+        subtitle={`Your manager hasn't published your ${quarter} review yet. Check back later.`}
+      />
+    );
+  }
+
+  const goals = review.goals || [];
+  const competencies = review.competencies || [];
+  const acknowledged = Boolean(review.acknowledged_at);
+
+  return (
+    <div className="space-y-6">
+      {ackToast && <div className="text-sm text-green-600">{ackToast}</div>}
+
+      {/* Status banner */}
+      <div className={`rounded-xl border p-4 ${acknowledged ? 'border-emerald-300 bg-emerald-50 dark:bg-transparent' : 'border-[var(--border)] bg-[var(--surface)]'}`}>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            {acknowledged ? <CheckCircle2 className="w-5 h-5 text-emerald-600" /> : <Flag className="w-5 h-5 text-[var(--accent)]" />}
+            <div>
+              <div className="font-medium">
+                {acknowledged ? 'You acknowledged this review' : 'Review published — please review and acknowledge'}
+              </div>
+              <div className="text-xs muted">
+                {quarter}
+                {review.recommendation ? ` · Recommendation: ${RECOMMENDATION_LABELS[review.recommendation] || review.recommendation}` : ''}
+                {acknowledged && review.acknowledged_at ? ` · ${new Date(review.acknowledged_at).toLocaleDateString()}` : ''}
+              </div>
+            </div>
+          </div>
+          {typeof review.score === 'number' && (
+            <div className="text-right">
+              <div className="text-xs muted">Overall</div>
+              <div className="text-xl font-semibold">{Math.round(review.score)}%</div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Summary / strengths / improvements */}
+      <section className="card p-5 grid gap-4 md:grid-cols-3">
+        <div>
+          <div className="text-xs uppercase tracking-wide muted mb-1">Summary</div>
+          <p className="text-sm whitespace-pre-wrap">{review.summary || '—'}</p>
+        </div>
+        <div>
+          <div className="text-xs uppercase tracking-wide muted mb-1">Strengths</div>
+          <p className="text-sm whitespace-pre-wrap">{review.strengths || '—'}</p>
+        </div>
+        <div>
+          <div className="text-xs uppercase tracking-wide muted mb-1">Areas to improve</div>
+          <p className="text-sm whitespace-pre-wrap">{review.improvements || '—'}</p>
+        </div>
+      </section>
+
+      {/* Goals: self vs manager */}
+      <section className="card p-5">
+        <div className="text-lg font-semibold mb-3">Goals — self vs. manager</div>
+        {goals.length === 0 ? (
+          <EmptyState title="No goal ratings" />
+        ) : (
+          <div className="space-y-3">
+            {goals.map((g) => (
+              <div key={g.goal_id} className="rounded-lg border border-[var(--border)] p-4">
+                <div className="font-medium mb-2">{g.title}</div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-lg bg-[var(--surface)] p-3">
+                    <div className="text-xs muted mb-1">Your self-assessment</div>
+                    <StarRow value={g.self_rating} />
+                    {g.self_review && <p className="mt-1 text-sm whitespace-pre-wrap">{g.self_review}</p>}
+                  </div>
+                  <div className="rounded-lg bg-[var(--surface)] p-3">
+                    <div className="text-xs muted mb-1">Manager's rating</div>
+                    <StarRow value={g.manager_rating} />
+                    {g.manager_comment && <p className="mt-1 text-sm whitespace-pre-wrap">{g.manager_comment}</p>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Competencies */}
+      {competencies.length > 0 && (
+        <section className="card p-5">
+          <div className="text-lg font-semibold mb-3">Competencies</div>
+          <div className="space-y-2">
+            {competencies.map((c, i) => (
+              <div key={c.org_competency_id || c.name || i} className="flex items-start justify-between gap-3 rounded-lg border border-[var(--border)] p-3">
+                <div>
+                  <div className="font-medium">{c.name}</div>
+                  {c.manager_comment && <div className="text-sm muted mt-0.5">{c.manager_comment}</div>}
+                </div>
+                <StarRow value={c.manager_rating} />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Acknowledge */}
+      <section className="card p-5">
+        <div className="text-lg font-semibold mb-2">Acknowledge</div>
+        {acknowledged ? (
+          <div className="text-sm">
+            <div className="text-emerald-600 mb-1">
+              You acknowledged this review on {new Date(review.acknowledged_at).toLocaleString()}.
+            </div>
+            {review.acknowledgement_response && (
+              <p className="muted whitespace-pre-wrap">Your response: {review.acknowledgement_response}</p>
+            )}
+          </div>
+        ) : (
+          <>
+            <p className="text-sm muted mb-2">
+              Confirm you've read and discussed this review. You can add an optional response.
+            </p>
+            <textarea
+              className="w-full rounded-lg border p-2 bg-[var(--card)] border-[var(--border)]"
+              rows={3}
+              placeholder="Optional response to your manager…"
+              value={response}
+              onChange={(e) => setResponse(e.target.value)}
+            />
+            <div className="mt-3 flex justify-end">
+              <button
+                onClick={acknowledge}
+                disabled={ackSaving}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--accent)] text-white disabled:opacity-50"
+              >
+                {ackSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                {ackSaving ? 'Saving…' : 'Acknowledge review'}
+              </button>
+            </div>
+          </>
+        )}
+      </section>
     </div>
   );
 }

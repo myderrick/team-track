@@ -1,533 +1,407 @@
 // src/pages/PerformanceReviewsPage.jsx
-import { useState, useMemo, useEffect } from 'react';
-import {
-    Box,
-    Tabs,
-    Tab,
-    Paper,
-    Typography,
-    Button,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
-    TextField,
-    Select,
-    MenuItem,
-    InputLabel,
-    FormControl,
-    Table,
-    TableHead,
-    TableRow,
-    TableCell,
-    TableBody,
-    IconButton,
-    Stack,
-} from '@mui/material';
-import AssessmentIcon from '@mui/icons-material/Assessment';
-import ChatIcon from '@mui/icons-material/Chat';
-import { Add, Edit, Delete } from '@mui/icons-material';
-import TopBar from '../components/TopBar';
+// Org-wide performance reviews overview for admin / HR.
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Sidebar from '../components/Sidebar';
-import { Plus } from 'lucide-react';
+import TopBar from '../components/TopBar';
+import EmptyState from '../components/EmptyState';
+import { supabase } from '@/lib/supabaseClient';
+import { useOrg } from '@/context/OrgContext';
+import { buildQuarterCycles, displayCycleLabel, normalizeCycle } from '@/utils/cycles';
+import { Star, X, Loader2 } from 'lucide-react';
 
-const dummyEmployees = ['Alice Johnson', 'Bob Smith', 'Carol Lee'];
+const FN_MISSING_RE = /(schema cache|Could not find the function|does not exist|No function matches)/i;
+const isFnMissing = (errOrRes) => {
+  const msg = (errOrRes?.error?.message || errOrRes?.message || '').toString();
+  return errOrRes?.error?.code === 'PGRST202' || FN_MISSING_RE.test(msg);
+};
 
-const initialReviews = [
-    {
-        id: 1,
-        employee: 'Alice Johnson',
-        date: '2024-12-20',
-        status: 'Upcoming',
-        selfAssessment: '',
-        managerComments: '',
-    },
-    {
-        id: 2,
-        employee: 'Bob Smith',
-        date: '2024-11-15',
-        status: 'Completed',
-        selfAssessment: 'Met most targets',
-        managerComments: 'Good improvement',
-    },
-];
+const RECOMMENDATION_LABELS = {
+  promotion: 'Promotion',
+  maintain: 'Maintain role',
+  pip: 'Improvement plan',
+};
 
-const initial1on1s = [
-    { id: 1, employee: 'Alice Johnson', date: '2024-12-01', notes: 'Discussed Q4 targets' },
-    { id: 2, employee: 'Carol Lee', date: '2024-11-20', notes: 'Career development' },
-];
+function statusMeta(status) {
+  const s = String(status || '').toLowerCase();
+  if (['completed', 'finalized', 'submitted'].includes(s))
+    return { label: 'Completed', cls: 'border-emerald-300 text-emerald-700 bg-emerald-50 dark:bg-transparent', key: 'completed' };
+  if (['in_progress', 'draft'].includes(s))
+    return { label: 'In progress', cls: 'border-blue-300 text-blue-700 bg-blue-50 dark:bg-transparent', key: 'in_progress' };
+  return { label: 'Pending', cls: 'border-gray-300 text-gray-500 bg-gray-50 dark:bg-transparent', key: 'pending' };
+}
 
-// Filter options
-const quarterOptions = ['Q1 2025', 'Q2 2025', 'Q3 2025', 'Q4 2025'];
-const deptOptions = ['All Departments', 'Sales', 'IT', 'Operations'];
-const locationOptions = ['All Locations', 'Ghana', 'Nigeria', 'Rest of the World'];
+function initials(name = '') {
+  return (
+    name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || '?'
+  );
+}
+
+function StarRow({ value = 0, max = 5 }) {
+  const v = Math.max(0, Math.min(max, Math.round(Number(value) || 0)));
+  return (
+    <span className="inline-flex items-center gap-0.5" title={`${v}/${max}`}>
+      {Array.from({ length: max }).map((_, i) => (
+        <Star key={i} className={`w-4 h-4 ${i < v ? 'fill-[var(--accent)] text-[var(--accent)]' : 'text-[var(--border)]'}`} />
+      ))}
+    </span>
+  );
+}
+
+function SummaryTile({ label, value }) {
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3">
+      <div className="text-xs muted">{label}</div>
+      <div className="mt-1 text-xl font-semibold">{value}</div>
+    </div>
+  );
+}
 
 export default function PerformanceReviewsPage() {
-    const [sidebarOpen, setSidebarOpen] = useState(false);
-    const [darkMode, setDarkMode] = useState(false);
+  const { orgId, myActiveRole, departments } = useOrg();
+  const isAdmin = myActiveRole === 'owner' || myActiveRole === 'admin';
 
-    const [quarter, setQuarter] = useState(quarterOptions[1]);
-    const [department, setDepartment] = useState(deptOptions[0]);
-    const [location, setLocation] = useState(locationOptions[0]);
+  const [, setSidebarOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => {
+    const saved = localStorage.getItem('darkMode');
+    return saved !== null ? saved === 'true' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', darkMode);
+    localStorage.setItem('darkMode', String(darkMode));
+  }, [darkMode]);
 
-    const [tab, setTab] = useState(0);
-    const [reviews, setReviews] = useState(initialReviews);
-    const [ones, setOnes] = useState(initial1on1s);
+  const cycleOptions = useMemo(() => buildQuarterCycles({ yearsBack: 1, yearsForward: 0 }), []);
+  const [cycleId, setCycleId] = useState('current');
+  const [department, setDepartment] = useState('All');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [query, setQuery] = useState('');
 
-    // filters
-    const [statusFilter, setStatusFilter] = useState('All');
-    const [dateRange, setDateRange] = useState({ from: '', to: '' });
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const [unavailable, setUnavailable] = useState(false);
 
-    // dialog
-    const [dialogOpen, setDialogOpen] = useState(false);
-    const [form, setForm] = useState({
-        id: null,
-        type: 'review',
-        employee: '',
-        date: '',
-        status: 'Upcoming',
-        selfAssessment: '',
-        managerComments: '',
-        notes: '',
+  // detail drawer
+  const [detailFor, setDetailFor] = useState(null); // row
+  const [detail, setDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailErr, setDetailErr] = useState('');
+
+  const load = useCallback(async () => {
+    if (!orgId || !isAdmin) return;
+    setLoading(true);
+    setErr('');
+    setUnavailable(false);
+    const { data, error } = await supabase.rpc('admin_list_org_reviews', {
+      p_org_id: orgId,
+      p_quarter: normalizeCycle(cycleId),
     });
+    if (error) {
+      if (isFnMissing(error)) setUnavailable(true);
+      else setErr(error.message || String(error));
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+    setRows(data || []);
+    setLoading(false);
+  }, [orgId, isAdmin, cycleId]);
 
-    // sync theme with html.dark using provided CSS tokens
-    useEffect(() => {
-        const saved = localStorage.getItem('theme');
-        if (saved) {
-            const isDark = saved === 'dark';
-            setDarkMode(isDark);
-            document.documentElement.classList.toggle('dark', isDark);
-        } else {
-            // honor system as a default
-            const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
-            setDarkMode(prefersDark);
-            document.documentElement.classList.toggle('dark', prefersDark);
-        }
-    }, []);
-    useEffect(() => {
-        document.documentElement.classList.toggle('dark', darkMode);
-        localStorage.setItem('theme', darkMode ? 'dark' : 'light');
-    }, [darkMode]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
-    // filtered data
-    const filteredReviews = useMemo(() => {
-        return reviews.filter(r => {
-            if (statusFilter !== 'All' && r.status !== statusFilter) return false;
-            if (dateRange.from && r.date < dateRange.from) return false;
-            if (dateRange.to && r.date > dateRange.to) return false;
-            return true;
-        });
-    }, [reviews, statusFilter, dateRange]);
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (department !== 'All' && (r.department || '') !== department) return false;
+      if (statusFilter !== 'All' && statusMeta(r.status).key !== statusFilter) return false;
+      if (q && ![r.full_name, r.department, r.title, r.manager_name].filter(Boolean).some((v) => String(v).toLowerCase().includes(q)))
+        return false;
+      return true;
+    });
+  }, [rows, department, statusFilter, query]);
 
-    const handleOpen = (item = null) => {
-        if (tab === 0) {
-            // review
-            setForm({
-                id: item?.id || null,
-                type: 'review',
-                employee: item?.employee || '',
-                date: item?.date || '',
-                status: item?.status || 'Upcoming',
-                selfAssessment: item?.selfAssessment || '',
-                managerComments: item?.managerComments || '',
-            });
-        } else {
-            // 1on1
-            setForm({
-                id: item?.id || null,
-                type: '1to1',
-                employee: item?.employee || '',
-                date: item?.date || '',
-                notes: item?.notes || '',
-            });
-        }
-        setDialogOpen(true);
-    };
+  const stats = useMemo(() => {
+    const acc = { total: rows.length, completed: 0, in_progress: 0, pending: 0 };
+    rows.forEach((r) => { acc[statusMeta(r.status).key] += 1; });
+    return acc;
+  }, [rows]);
 
-    const handleSave = () => {
-        if (form.type === 'review') {
-            const updated = {
-                id: form.id || Date.now(),
-                employee: form.employee,
-                date: form.date,
-                status: form.status,
-                selfAssessment: form.selfAssessment,
-                managerComments: form.managerComments,
-            };
-            setReviews(rs =>
-                form.id
-                    ? rs.map(r => (r.id === form.id ? updated : r))
-                    : [...rs, updated]
-            );
-        } else {
-            const updated = {
-                id: form.id || Date.now(),
-                employee: form.employee,
-                date: form.date,
-                notes: form.notes,
-            };
-            setOnes(os =>
-                form.id
-                    ? os.map(o => (o.id === form.id ? updated : o))
-                    : [...os, updated]
-            );
-        }
-        setDialogOpen(false);
-    };
+  async function openDetail(row) {
+    setDetailFor(row);
+    setDetail(null);
+    setDetailErr('');
+    setDetailLoading(true);
+    const { data, error } = await supabase.rpc('admin_org_review_detail', {
+      p_org_id: orgId,
+      p_employee_id: row.employee_id,
+      p_quarter: normalizeCycle(cycleId),
+    });
+    if (error) {
+      setDetailErr(isFnMissing(error) ? 'Review detail will be available once the backend is deployed.' : (error.message || String(error)));
+    } else {
+      setDetail(Array.isArray(data) ? data[0] : data);
+    }
+    setDetailLoading(false);
+  }
 
-    const handleDelete = id => {
-        if (tab === 0) setReviews(rs => rs.filter(r => r.id !== id));
-        else setOnes(os => os.filter(o => o.id !== id));
-    };
+  function closeDetail() {
+    setDetailFor(null);
+    setDetail(null);
+    setDetailErr('');
+  }
 
-    return (
-        <div className="flex flex-col h-screen bg-[var(--bg)] text-[var(--fg)]">
-            <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-            <TopBar
-                onMenuClick={() => setSidebarOpen(o => !o)}
-                darkMode={darkMode}
-                onToggleDark={() => setDarkMode(m => !m)}
-            />
+  return (
+    <div className="flex h-screen overflow-hidden text-[var(--fg)]">
+      <Sidebar />
+      <div className="flex flex-col flex-1">
+        <TopBar
+          onMenuClick={() => setSidebarOpen((o) => !o)}
+          darkMode={darkMode}
+          onToggleDark={() => setDarkMode((m) => !m)}
+        />
 
-            {/* Filter Bar */}
-            <div className="toolbar sticky top-14 z-10 shadow ml-[var(--sidebar-w)] px-6 py-4 transition-[margin] duration-200">
-                <div className="flex flex-col md:flex-row items-center justify-between">
-                    <div>
-                        <h1 className="text-2xl font-bold">Performance Reviews</h1>
-                        <p className="text-sm muted">Performance Review for May 4, 2025</p>
-                    </div>
-                    <div className="mt-4 md:mt-0 flex flex-wrap gap-6 items-center">
-                        <select
-                            value={quarter}
-                            onChange={e => setQuarter(e.target.value)}
-                            className="px-3 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] focus:outline-none"
-                        >
-                            {quarterOptions.map(q => <option key={q}>{q}</option>)}
-                        </select>
-                        <select
-                            value={department}
-                            onChange={e => setDepartment(e.target.value)}
-                            className="px-3 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] focus:outline-none"
-                        >
-                            {deptOptions.map(d => <option key={d}>{d}</option>)}
-                        </select>
-                        <select
-                            value={location}
-                            onChange={e => setLocation(e.target.value)}
-                            className="px-3 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] focus:outline-none"
-                        >
-                            {locationOptions.map(l => <option key={l}>{l}</option>)}
-                        </select>
-                    </div>
+        {/* Header + filters */}
+        <div className="toolbar sticky top-14 z-10 shadow ml-[var(--sidebar-w)] px-6 py-4 transition-[margin] duration-200">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div>
+              <h1 className="text-2xl font-bold">Performance Reviews</h1>
+              <p className="text-sm muted">Org-wide review status for {displayCycleLabel(cycleId)}.</p>
+            </div>
+            {isAdmin && (
+              <div className="flex flex-wrap gap-3 items-center">
+                <select
+                  value={cycleId}
+                  onChange={(e) => setCycleId(e.target.value)}
+                  className="px-3 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)]"
+                >
+                  {cycleOptions.map((c) => (
+                    <option key={c} value={c}>{displayCycleLabel(c)}</option>
+                  ))}
+                </select>
+                <select
+                  value={department}
+                  onChange={(e) => setDepartment(e.target.value)}
+                  className="px-3 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)]"
+                >
+                  <option value="All">All departments</option>
+                  {(departments || []).map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="px-3 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)]"
+                >
+                  <option value="All">All statuses</option>
+                  <option value="completed">Completed</option>
+                  <option value="in_progress">In progress</option>
+                  <option value="pending">Pending</option>
+                </select>
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search name, manager…"
+                  className="px-3 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] w-56 max-w-full"
+                />
+              </div>
+            )}
+          </div>
+        </div>
+
+        <main className="flex-1 ml-[var(--sidebar-w)] mt-4 mr-4 mb-4 px-6 overflow-auto transition-[margin] duration-200">
+          {!isAdmin ? (
+            <div className="p-6">
+              <EmptyState title="Not authorized" subtitle="You need an Owner or Admin role to view org-wide reviews." />
+            </div>
+          ) : loading ? (
+            <div className="p-6 text-sm muted">Loading…</div>
+          ) : unavailable ? (
+            <div className="p-6">
+              <EmptyState
+                title="Reviews backend not deployed yet"
+                subtitle="Once the review RPCs are applied to Supabase, org-wide review status will appear here."
+              />
+            </div>
+          ) : err ? (
+            <div className="p-6">
+              <EmptyState title="Unable to load" subtitle={err} />
+            </div>
+          ) : (
+            <>
+              <div className="grid gap-3 sm:grid-cols-4 mb-4">
+                <SummaryTile label="People" value={stats.total} />
+                <SummaryTile label="Completed" value={stats.completed} />
+                <SummaryTile label="In progress" value={stats.in_progress} />
+                <SummaryTile label="Pending" value={stats.pending} />
+              </div>
+
+              <section className="card p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-lg font-semibold">Reviews</div>
+                  <div className="text-sm muted">{filtered.length} of {rows.length}</div>
                 </div>
+
+                {filtered.length === 0 ? (
+                  <EmptyState title="No reviews found" subtitle="Try a different cycle or filter." />
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                      <thead className="text-left muted">
+                        <tr>
+                          <th className="py-2 pr-3">Employee</th>
+                          <th className="py-2 pr-3">Department</th>
+                          <th className="py-2 pr-3">Status</th>
+                          <th className="py-2 pr-3">Score</th>
+                          <th className="py-2 pr-3">Manager</th>
+                          <th className="py-2 pr-3">Submitted</th>
+                          <th className="py-2 pr-3 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filtered.map((r) => {
+                          const sm = statusMeta(r.status);
+                          return (
+                            <tr key={r.employee_id} className="border-t border-[var(--border)]">
+                              <td className="py-2 pr-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="h-8 w-8 rounded-full bg-[var(--surface)] flex items-center justify-center text-xs font-semibold">
+                                    {initials(r.full_name)}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="font-medium truncate">{r.full_name || '—'}</div>
+                                    {r.title && <div className="text-xs muted truncate">{r.title}</div>}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="py-2 pr-3">{r.department || '—'}</td>
+                              <td className="py-2 pr-3">
+                                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${sm.cls}`}>
+                                  {sm.label}
+                                </span>
+                              </td>
+                              <td className="py-2 pr-3">
+                                {typeof r.score === 'number' ? `${Math.round(r.score)}%` : '—'}
+                              </td>
+                              <td className="py-2 pr-3">{r.manager_name || '—'}</td>
+                              <td className="py-2 pr-3">
+                                {r.submitted_at ? new Date(r.submitted_at).toLocaleDateString() : '—'}
+                              </td>
+                              <td className="py-2 pr-3 text-right">
+                                <button
+                                  onClick={() => openDetail(r)}
+                                  className="px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)]"
+                                >
+                                  View
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            </>
+          )}
+        </main>
+      </div>
+
+      {/* Detail drawer */}
+      {detailFor && (
+        <div className="fixed inset-0 z-50 flex">
+          <div className="flex-1 bg-black/40" onClick={closeDetail} />
+          <div className="w-full max-w-xl h-full bg-[var(--card)] border-l border-[var(--border)] overflow-auto p-6">
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <div className="text-lg font-semibold">{detailFor.full_name}</div>
+                <div className="text-xs muted">
+                  {[detailFor.title, detailFor.department].filter(Boolean).join(' • ')} · {displayCycleLabel(cycleId)}
+                </div>
+              </div>
+              <button onClick={closeDetail} className="muted hover:opacity-80"><X className="w-5 h-5" /></button>
             </div>
 
-            <main
-                className="
-          flex-1
-          ml-[calc(var(--sidebar-w)+1rem)]
-          mt-4
-          mr-4
-          mb-4
-          transition-[margin] duration-200
-          px-0
-          overflow-auto
-        "
-            >
-                <div className="flex flex-col h-full card p-6">
-                    <Box px={4} py={2} overflow="auto">
-                        <Paper
-                            elevation={0}
-                            sx={{
-                                backgroundColor: 'var(--surface)',
-                                color: 'var(--fg)',
-                                border: '1px solid var(--border)',
-                                borderRadius: 2,
-                            }}
-                        >
-                            <Tabs
-                                value={tab}
-                                onChange={(_, v) => setTab(v)}
-                                variant="fullWidth"
-                                textColor="inherit"
-                                TabIndicatorProps={{ style: { backgroundColor: 'var(--accent)', height: 4, borderRadius: 2 } }}
-                                sx={{
-                                    '& .MuiTab-root': {
-                                        textTransform: 'none',
-                                        fontWeight: 600,
-                                        fontSize: '0.9rem',
-                                        px: 2,
-                                        minHeight: 'auto',
-                                        mx: 0.5,
-                                        transition: 'background 0.2s',
-                                        color: 'var(--fg)',
-                                    },
-                                    '& .MuiTab-root.Mui-selected': {
-                                        color: 'var(--accent)',
-                                    },
-                                }}
-                            >
-                                <Tab
-                                    icon={<AssessmentIcon />}
-                                    iconPosition="start"
-                                    label="Performance Reviews"
-                                />
-                                <Tab
-                                    icon={<ChatIcon />}
-                                    iconPosition="start"
-                                    label="1-on-1s"
-                                />
-                            </Tabs>
-                        </Paper>
-
-                        <Stack direction="row" alignItems="center" justifyContent="space-between" mt={2}>
-                            <Typography variant="h6">
-                                {tab === 0 ? 'Reviews' : '1-on-1s'}
-                            </Typography>
-                            <Button
-                                startIcon={<Add />}
-                                variant="contained"
-                                onClick={() => handleOpen()}
-                                disableElevation
-                                sx={{
-                                    textTransform: 'none',
-                                    ml: 2,
-                                    bgcolor: 'var(--accent)',
-                                    color: '#fff',
-                                    '&:hover': { filter: 'brightness(0.95)', bgcolor: 'var(--accent)' },
-                                }}
-                            >
-                                Schedule {tab === 0 ? 'Review' : '1-on-1'}
-                            </Button>
-                        </Stack>
-
-                        {/* Filters (for Reviews tab) */}
-                        {tab === 0 && (
-                            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} mt={2} alignItems="center">
-                                <FormControl size="small" sx={{ minWidth: 120 }}>
-                                    <InputLabel>Status</InputLabel>
-                                    <Select
-                                        label="Status"
-                                        value={statusFilter}
-                                        onChange={e => setStatusFilter(e.target.value)}
-                                        sx={{
-                                            '& .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
-                                            '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
-                                        }}
-                                    >
-                                        {['All', 'Upcoming', 'Completed'].map(s => (
-                                            <MenuItem key={s} value={s}>{s}</MenuItem>
-                                        ))}
-                                    </Select>
-                                </FormControl>
-                                <TextField
-                                    label="From"
-                                    type="date"
-                                    size="small"
-                                    slotProps={{ inputLabel: { shrink: true } }}
-                                    value={dateRange.from}
-                                    onChange={e => setDateRange(d => ({ ...d, from: e.target.value }))}
-                                    sx={{
-                                        '& .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
-                                        '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
-                                    }}
-                                />
-                                <TextField
-                                    label="To"
-                                    type="date"
-                                    size="small"
-                                    slotProps={{ inputLabel: { shrink: true } }}
-                                    value={dateRange.to}
-                                    onChange={e => setDateRange(d => ({ ...d, to: e.target.value }))}
-                                    sx={{
-                                        '& .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
-                                        '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
-                                    }}
-                                />
-                            </Stack>
-                        )}
-
-                        {/* Table */}
-                        <Box mt={2}>
-                            <Table
-                                sx={{
-                                    '& th, & td': { borderColor: 'var(--border)', color: 'var(--fg)' },
-                                }}
-                            >
-                                <TableHead>
-                                    <TableRow>
-                                        <TableCell>Employee</TableCell>
-                                        <TableCell>Date</TableCell>
-                                        {tab === 0
-                                            ? <TableCell>Status</TableCell>
-                                            : <TableCell>Notes</TableCell>
-                                        }
-                                        <TableCell align="right">Actions</TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {(tab === 0 ? filteredReviews : ones).map(item => (
-                                        <TableRow key={item.id} hover>
-                                            <TableCell>{item.employee}</TableCell>
-                                            <TableCell>{item.date}</TableCell>
-                                            {tab === 0
-                                                ? <TableCell>{item.status}</TableCell>
-                                                : <TableCell>{item.notes}</TableCell>
-                                            }
-                                            <TableCell align="right">
-                                                <IconButton size="small" onClick={() => handleOpen(item)} sx={{ color: 'var(--fg)' }}>
-                                                    <Edit fontSize="inherit" />
-                                                </IconButton>
-                                                <IconButton size="small" onClick={() => handleDelete(item.id)} sx={{ color: 'var(--fg)' }}>
-                                                    <Delete fontSize="inherit" />
-                                                </IconButton>
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </Box>
-                    </Box>
+            {detailLoading ? (
+              <div className="flex items-center gap-2 text-sm muted"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
+            ) : detailErr ? (
+              <EmptyState title="Unavailable" subtitle={detailErr} />
+            ) : !detail ? (
+              <EmptyState title="No detail" subtitle="No review detail for this person and cycle." />
+            ) : (
+              <div className="space-y-5">
+                <div className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+                  <div>
+                    <div className="text-xs muted">Recommendation</div>
+                    <div className="font-medium">{RECOMMENDATION_LABELS[detail.recommendation] || detail.recommendation || '—'}</div>
+                  </div>
+                  {typeof detail.score === 'number' && (
+                    <div className="text-right">
+                      <div className="text-xs muted">Overall</div>
+                      <div className="text-xl font-semibold">{Math.round(detail.score)}%</div>
+                    </div>
+                  )}
                 </div>
-            </main>
 
-            {/* Schedule / Edit Dialog */}
-            <Dialog
-                open={dialogOpen}
-                onClose={() => setDialogOpen(false)}
-                fullWidth
-                maxWidth="sm"
-                PaperProps={{
-                    sx: {
-                        backgroundColor: 'var(--card)',
-                        color: 'var(--fg)',
-                        border: '1px solid var(--border)',
-                    },
-                }}
-            >
-                <DialogTitle sx={{ borderBottom: '1px solid var(--border)' }}>
-                    {form.type === 'review'
-                        ? form.id ? 'Edit Review' : 'Schedule Review'
-                        : form.id ? 'Edit 1 on 1' : 'Schedule 1 on 1'}
-                </DialogTitle>
-                <DialogContent dividers sx={{ borderColor: 'var(--border)' }}>
-                    <FormControl fullWidth margin="normal" size="small">
-                        <InputLabel>Employee</InputLabel>
-                        <Select
-                            label="Employee"
-                            value={form.employee}
-                            onChange={e => setForm(f => ({ ...f, employee: e.target.value }))}
-                            sx={{
-                                '& .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
-                                '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
-                            }}
-                        >
-                            {dummyEmployees.map(e => (
-                                <MenuItem key={e} value={e}>{e}</MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
+                <div className="grid gap-4">
+                  <div>
+                    <div className="text-xs uppercase tracking-wide muted mb-1">Summary</div>
+                    <p className="text-sm whitespace-pre-wrap">{detail.summary || '—'}</p>
+                  </div>
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide muted mb-1">Strengths</div>
+                      <p className="text-sm whitespace-pre-wrap">{detail.strengths || '—'}</p>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-wide muted mb-1">Areas to improve</div>
+                      <p className="text-sm whitespace-pre-wrap">{detail.improvements || '—'}</p>
+                    </div>
+                  </div>
+                </div>
 
-                    <TextField
-                        margin="normal"
-                        label="Date"
-                        type="date"
-                        fullWidth
-                        size="small"
-                        slotProps={{ inputLabel: { shrink: true } }}
-                        value={form.date}
-                        onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
-                        sx={{
-                            '& .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
-                            '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
-                        }}
-                    />
+                {(detail.goals || []).length > 0 && (
+                  <div>
+                    <div className="text-sm font-semibold mb-2">Goals</div>
+                    <div className="space-y-2">
+                      {detail.goals.map((g) => (
+                        <div key={g.goal_id} className="rounded-lg border border-[var(--border)] p-3">
+                          <div className="font-medium mb-1">{g.title}</div>
+                          <div className="flex items-center gap-4 text-xs muted">
+                            <span className="inline-flex items-center gap-1">Self <StarRow value={g.self_rating} /></span>
+                            <span className="inline-flex items-center gap-1">Manager <StarRow value={g.manager_rating} /></span>
+                          </div>
+                          {g.manager_comment && <p className="mt-1 text-sm">{g.manager_comment}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-                    {form.type === 'review' && (
-                        <>
-                            <FormControl fullWidth margin="normal" size="small">
-                                <InputLabel>Status</InputLabel>
-                                <Select
-                                    label="Status"
-                                    value={form.status}
-                                    onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-                                    sx={{
-                                        '& .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
-                                        '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
-                                    }}
-                                >
-                                    {['Upcoming', 'Completed'].map(s => (
-                                        <MenuItem key={s} value={s}>{s}</MenuItem>
-                                    ))}
-                                </Select>
-                            </FormControl>
-
-                            <TextField
-                                margin="normal"
-                                label="Self‐Assessment"
-                                fullWidth
-                                multiline
-                                minRows={3}
-                                size="small"
-                                value={form.selfAssessment}
-                                onChange={e => setForm(f => ({ ...f, selfAssessment: e.target.value }))}
-                                sx={{
-                                    '& .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
-                                    '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
-                                }}
-                            />
-
-                            <TextField
-                                margin="normal"
-                                label="Manager Comments"
-                                fullWidth
-                                multiline
-                                minRows={3}
-                                size="small"
-                                value={form.managerComments}
-                                onChange={e => setForm(f => ({ ...f, managerComments: e.target.value }))}
-                                sx={{
-                                    '& .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
-                                    '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
-                                }}
-                            />
-                        </>
-                    )}
-
-                    {form.type === '1to1' && (
-                        <TextField
-                            margin="normal"
-                            label="Notes / Agenda"
-                            fullWidth
-                            multiline
-                            minRows={3}
-                            size="small"
-                            value={form.notes}
-                            onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                            sx={{
-                                '& .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
-                                '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
-                            }}
-                        />
-                    )}
-                </DialogContent>
-                <DialogActions sx={{ borderTop: '1px solid var(--border)' }}>
-                    <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
-                    <Button
-                        onClick={handleSave}
-                        variant="contained"
-                        disableElevation
-                        sx={{
-                            bgcolor: 'var(--accent)',
-                            color: '#fff',
-                            '&:hover': { filter: 'brightness(0.95)', bgcolor: 'var(--accent)' },
-                        }}
-                    >
-                        Save
-                    </Button>
-                </DialogActions>
-            </Dialog>
+                {(detail.competencies || []).length > 0 && (
+                  <div>
+                    <div className="text-sm font-semibold mb-2">Competencies</div>
+                    <div className="space-y-2">
+                      {detail.competencies.map((c, i) => (
+                        <div key={c.org_competency_id || c.name || i} className="flex items-start justify-between gap-3 rounded-lg border border-[var(--border)] p-3">
+                          <div>
+                            <div className="font-medium">{c.name}</div>
+                            {c.manager_comment && <div className="text-sm muted mt-0.5">{c.manager_comment}</div>}
+                          </div>
+                          <StarRow value={c.manager_rating} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
-    );
+      )}
+    </div>
+  );
 }

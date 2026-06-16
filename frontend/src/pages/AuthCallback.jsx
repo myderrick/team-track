@@ -73,6 +73,16 @@ export default function AuthCallback() {
             .catch(() => {});
         }
 
+        const pendingJoinCode = localStorage.getItem('pending_join_code');
+        if (pendingJoinCode?.trim()) {
+          const redeemed = await rpcSafe('join_org_with_code', { p_code: pendingJoinCode.trim() });
+          if (redeemed.error) {
+            setMsg(redeemed.error.message || 'Could not redeem the join code.');
+            return;
+          }
+          localStorage.removeItem('pending_join_code');
+        }
+
         let dest = next;
         if (next === '/dashboard' || next === '/login' || next === '/signup' || next === '/auth/callback') {
           const rOrgs = await rpcSafe('user_orgs');

@@ -189,7 +189,7 @@ async function handleSubmit(e) {
     if (session && joinCode.trim()) {
       const r = await redeemJoinCode(joinCode.trim());
       if (r?.error) throw r.error;
-      // join code kept in localStorage for callback fallback is fine; optional to clear here
+      localStorage.removeItem('pending_join_code');
     }
 
     if (!session) {

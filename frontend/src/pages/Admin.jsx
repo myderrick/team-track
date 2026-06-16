@@ -6,6 +6,7 @@ import TopBar from '@/components/TopBar';
 import EmptyState from '@/components/EmptyState';
 import { supabase } from '@/lib/supabaseClient';
 import { useOrg } from '@/context/OrgContext';
+import { rpcSafe } from '@/utils/rpsSafe';
 
 const ROLE_OPTIONS = [
   { value: 'owner', label: 'Owner' },
@@ -42,6 +43,8 @@ export default function Admin() {
   const [toast, setToast] = useState('');
   const [query, setQuery] = useState('');
   const [busyId, setBusyId] = useState(null); // employee_id currently saving
+  const [joinCode, setJoinCode] = useState('');
+  const [joinCodeFor, setJoinCodeFor] = useState('');
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
@@ -142,6 +145,54 @@ export default function Admin() {
     );
   }
 
+  async function regenerateJoinCode(row) {
+    setBusyId(row.employee_id);
+    setErr('');
+    setJoinCode('');
+    setJoinCodeFor('');
+    try {
+      const r = await rpcSafe('rotate_join_code', { p_org_id: orgId, p_len: 8 });
+      if (r.error) throw r.error;
+      const code = r.data || '';
+      setJoinCode(code);
+      setJoinCodeFor(row.full_name || row.email || 'staff member');
+
+      if (!row.email) {
+        flashToast('Join code generated. No email address is available for this staff member.');
+        return;
+      }
+
+      const emailed = await rpcSafe('send_staff_join_code_email', {
+        p_org_id: orgId,
+        p_employee_id: row.employee_id,
+        p_code: code,
+        p_register_url: `${window.location.origin}/staff/register`,
+      });
+
+      if (emailed.error) throw emailed.error;
+      const emailResult = emailed.data || {};
+      if (emailResult.ok === false) {
+        setErr(emailResult.error || 'Join code generated, but the email could not be sent.');
+        return;
+      }
+
+      flashToast(`Join code emailed to ${row.email}.`);
+    } catch (e) {
+      setErr(String(e.message || e));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function copyJoinCode() {
+    try {
+      await navigator.clipboard.writeText(joinCode);
+      flashToast('Join code copied.');
+    } catch {
+      setErr('Could not copy join code. Select and copy it manually.');
+    }
+  }
+
   return (
     <div className="flex h-screen overflow-hidden text-[var(--fg)]">
       <Sidebar />
@@ -179,7 +230,7 @@ export default function Admin() {
                 onClick={() => navigate('/employees/add')}
                 className="px-3 py-2 rounded-lg bg-[var(--accent)] text-white hover:brightness-90"
               >
-                Add / invite user
+                Add user / join code
               </button>
             </div>
           )}
@@ -203,6 +254,20 @@ export default function Admin() {
             <>
               {toast && <div className="mb-3 text-sm text-green-600">{toast}</div>}
               {err && <div className="mb-3 text-sm text-red-600">{err}</div>}
+              {joinCode && (
+                <div className="mb-3 rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 text-sm flex flex-wrap items-center gap-3">
+                  <span className="muted">Join code for {joinCodeFor}:</span>
+                  <code className="px-2 py-1 rounded bg-[var(--surface)] border border-[var(--border)] font-mono">{joinCode}</code>
+                  <button
+                    type="button"
+                    onClick={copyJoinCode}
+                    className="px-2.5 py-1 rounded-lg border border-[var(--border)] bg-[var(--card)]"
+                  >
+                    Copy
+                  </button>
+                  <span className="text-xs muted">Previous code is now invalid.</span>
+                </div>
+              )}
 
               <section className="card p-5">
                 <div className="flex items-center justify-between mb-3">
@@ -244,25 +309,36 @@ export default function Admin() {
 
                               {/* Role */}
                               <td className="py-2 pr-3">
-                                {r.linked ? (
-                                  <select
-                                    value={(r.role || '').toLowerCase()}
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {r.linked ? (
+                                    <select
+                                      value={(r.role || '').toLowerCase()}
+                                      disabled={saving}
+                                      onChange={(e) => changeRole(r, e.target.value)}
+                                      className="px-2 py-1.5 border rounded-lg bg-[var(--card)] border-[var(--border)] disabled:opacity-50"
+                                    >
+                                      {ROLE_OPTIONS.every((o) => o.value !== (r.role || '').toLowerCase()) && (
+                                        <option value={(r.role || '').toLowerCase()}>
+                                          {r.role || 'unknown'}
+                                        </option>
+                                      )}
+                                      {ROLE_OPTIONS.map((o) => (
+                                        <option key={o.value} value={o.value}>{o.label}</option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <span className="text-xs muted">Not registered</span>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => regenerateJoinCode(r)}
                                     disabled={saving}
-                                    onChange={(e) => changeRole(r, e.target.value)}
-                                    className="px-2 py-1.5 border rounded-lg bg-[var(--card)] border-[var(--border)] disabled:opacity-50"
+                                    className="px-2 py-1 rounded-lg border border-[var(--border)] bg-[var(--card)] text-xs disabled:opacity-50"
+                                    title="Generate a join code for this organization"
                                   >
-                                    {ROLE_OPTIONS.every((o) => o.value !== (r.role || '').toLowerCase()) && (
-                                      <option value={(r.role || '').toLowerCase()}>
-                                        {r.role || 'unknown'}
-                                      </option>
-                                    )}
-                                    {ROLE_OPTIONS.map((o) => (
-                                      <option key={o.value} value={o.value}>{o.label}</option>
-                                    ))}
-                                  </select>
-                                ) : (
-                                  <span className="text-xs muted">Not registered</span>
-                                )}
+                                    Generate code
+                                  </button>
+                                </div>
                               </td>
 
                               {/* Status */}

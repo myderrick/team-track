@@ -58,8 +58,6 @@ export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const rawFrom = location.state?.from?.pathname || '/dashboard';
-  const from = ['/login','/signup','/auth/callback'].includes(rawFrom) ? '/dashboard' : rawFrom;
   const cameFromProtected = Boolean(location.state?.from);
 
   async function signIn(e) {
@@ -100,7 +98,7 @@ export default function Login() {
     // 1) Auth — unchanged
     const { data, error: authErr } = await supabase.auth.signInWithPassword({ email, password });
     if (authErr) { setBusy(false); return setError(authErr.message); }
-    try { localStorage.setItem('remember_me', remember ? '1' : '0'); } catch {}
+    try { localStorage.setItem('remember_me', remember ? '1' : '0'); } catch { /* localStorage may be unavailable */ }
 
     const userId = data.session?.user?.id;
     if (!userId) { setBusy(false); return navigate('/login', { replace: true }); }
@@ -135,16 +133,15 @@ if (!rEmp.error) {
 // - Else if plain member -> from (fallback /dashboard)
 // - Else -> /onboarding
 const fromPath = (location.state?.from?.pathname || '') + '';
-const from = ['/login','/signup','/auth/callback'].includes(fromPath) ? '/dashboard' : fromPath;
+const from = !fromPath || ['/login','/signup','/auth/callback'].includes(fromPath) ? '/dashboard' : fromPath;
 
 let dest = '/onboarding';
 
 if (isPrivileged) {
   dest = '/dashboard';
 
-} 
- else if (isStaff) {
- dest = '/dashboard'; // always go to one dashboard route
+} else if (isStaff || hasStaff) {
+  dest = fromPath.startsWith('/staff') ? fromPath : '/staff';
 } else if (isAnyMember) {
   dest = from;
 } else {

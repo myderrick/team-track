@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
+import { rpcSafe } from '@/utils/rpsSafe';
 
 const PUBLIC_EMAIL_DOMAINS = new Set(['gmail.com','outlook.com','hotmail.com','yahoo.com','icloud.com','aol.com','live.com','me.com','msn.com','proton.me','protonmail.com','yandex.com','zoho.com','mail.com']);
 const emailDomain = (v='') => (v.split('@')[1] || '').toLowerCase().trim();
@@ -72,8 +73,28 @@ export default function AuthCallback() {
             .catch(() => {});
         }
 
+        let dest = next;
+        if (next === '/dashboard' || next === '/login' || next === '/signup' || next === '/auth/callback') {
+          const rOrgs = await rpcSafe('user_orgs');
+          const orgs = rOrgs.error ? [] : (Array.isArray(rOrgs.data) ? rOrgs.data : []);
+          const activeOrgs = orgs.filter((o) => o.is_active);
+          const roles = activeOrgs.map((o) => (o.role || '').toLowerCase());
+          const isPrivileged = roles.some((r) => r === 'owner' || r === 'admin' || r === 'manager');
+          const isStaff = roles.some((r) => r === 'staff' || r === 'member');
+
+          let hasStaff = false;
+          const rEmp = await rpcSafe('employee_my');
+          if (!rEmp.error) {
+            hasStaff = (Array.isArray(rEmp.data) ? rEmp.data : []).length > 0;
+          }
+
+          if (isPrivileged) dest = '/dashboard';
+          else if (isStaff || hasStaff) dest = '/staff';
+          else if (!activeOrgs.length) dest = '/onboarding';
+        }
+
         sessionStorage.removeItem('post_auth_redirect');
-        navigate(next, { replace: true });
+        navigate(dest, { replace: true });
       } catch (e) {
         console.error(e);
         navigate('/login', { replace: true });

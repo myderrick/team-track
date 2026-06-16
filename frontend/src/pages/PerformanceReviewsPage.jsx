@@ -7,6 +7,7 @@ import EmptyState from '../components/EmptyState';
 import { supabase } from '@/lib/supabaseClient';
 import { useOrg } from '@/context/OrgContext';
 import { buildQuarterCycles, displayCycleLabel, normalizeCycle } from '@/utils/cycles';
+import { downloadCsv, todayStamp } from '@/utils/csv';
 import { Star, X, Loader2 } from 'lucide-react';
 
 const FN_MISSING_RE = /(schema cache|Could not find the function|does not exist|No function matches)/i;
@@ -241,7 +242,30 @@ export default function PerformanceReviewsPage() {
               <section className="card p-5">
                 <div className="flex items-center justify-between mb-3">
                   <div className="text-lg font-semibold">Reviews</div>
-                  <div className="text-sm muted">{filtered.length} of {rows.length}</div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-sm muted">{filtered.length} of {rows.length}</div>
+                    {filtered.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => downloadCsv(
+                          `performance-reviews-${normalizeCycle(cycleId) || 'current'}-${todayStamp()}.csv`,
+                          filtered,
+                          [
+                            { key: 'full_name', label: 'Employee' },
+                            { key: 'department', label: 'Department' },
+                            { key: 'title', label: 'Title' },
+                            { key: 'status', label: 'Status', format: (v) => statusMeta(v).label },
+                            { key: 'score', label: 'Score %', format: (v) => (typeof v === 'number' ? Math.round(v) : '') },
+                            { key: 'manager_name', label: 'Manager' },
+                            { key: 'submitted_at', label: 'Submitted', format: (v) => (v ? new Date(v).toLocaleDateString() : '') },
+                          ]
+                        )}
+                        className="px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] text-sm"
+                      >
+                        Export CSV
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {filtered.length === 0 ? (

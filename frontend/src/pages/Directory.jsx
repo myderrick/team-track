@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import DirectoryFilterBar from '@/components/DirectoryFilterBar';
 import useDebouncedValue from '@/hooks/useDebouncedValue';
 import useSearchParamsState from '@/hooks/useSearchParamsState';
+import { downloadCsv, todayStamp } from '@/utils/csv';
 
 function buildQuarterOptions({ yearsBack = 1, yearsForward = 1 } = {}) {
   const now = new Date();
@@ -144,6 +145,27 @@ const q = debouncedSearch.trim().toLowerCase();
             ) : filtered.length === 0 ? (
               <EmptyState title="No matches" subtitle="Try changing your filters or search." />
             ) : (
+              <>
+              <div className="mb-3 flex items-center justify-between">
+                <div className="text-sm text-gray-500">{filtered.length} {filtered.length === 1 ? 'person' : 'people'}</div>
+                <button
+                  type="button"
+                  onClick={() => downloadCsv(
+                    `directory-${todayStamp()}.csv`,
+                    filtered,
+                    [
+                      { key: 'full_name', label: 'Name' },
+                      { key: 'email', label: 'Email' },
+                      { key: 'title', label: 'Title' },
+                      { key: 'department', label: 'Department' },
+                      { key: 'location', label: 'Location' },
+                    ]
+                  )}
+                  className="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                  Export CSV
+                </button>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filtered.map(u => (
                   <Link
@@ -161,6 +183,7 @@ const q = debouncedSearch.trim().toLowerCase();
                   </Link>
                 ))}
               </div>
+              </>
             )}
           </div>
         </main>

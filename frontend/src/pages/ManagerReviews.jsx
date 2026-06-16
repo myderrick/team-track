@@ -42,6 +42,7 @@ import {supabase} from "@/lib/supabaseClient";
 import {useOrg} from "@/context/OrgContext";
 import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
+import {useDarkMode} from "@/theme/DarkModeProvider";
 import {ThemeProvider, createTheme, alpha} from "@mui/material/styles";
 import {
   buildQuarterCycles,
@@ -604,7 +605,7 @@ function GoalCard({ item, onChange, ownerId }) {
 export default function ManagerReviewsPage() {
   const {orgId} = useOrg();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
+  const {isDark: darkMode} = useDarkMode(); // single source of truth (DarkModeProvider)
   const muiTheme = useMuiTheme(darkMode);
 
   const cycleOptions = React.useMemo(
@@ -642,26 +643,6 @@ const latestReqRef = useRef(0);
     }
     setCatalog(data || []);
   }, [catalogCategory, catalogQuery]);
-
-  // initialize from saved preference once
-  useEffect(() => {
-    const saved = localStorage.getItem("tt-theme");
-    if (saved === "dark") {
-      document.documentElement.classList.add("dark");
-      setDarkMode(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    const root = document.documentElement;
-    if (darkMode) {
-      root.classList.add("dark");
-      localStorage.setItem("tt-theme", "dark");
-    } else {
-      root.classList.remove("dark");
-      localStorage.setItem("tt-theme", "light");
-    }
-  }, [darkMode]);
 
   useEffect(() => {
     if (showCatalog) loadCatalog();
@@ -859,11 +840,7 @@ const loadWorkspace = useCallback(async () => {
     // Apply Tailwind dark mode scope here:
     <div className="flex flex-col h-screen">
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <TopBar
-        onMenuClick={() => setSidebarOpen((o) => !o)}
-        darkMode={darkMode}
-        onToggleDark={() => setDarkMode((m) => !m)}
-      />
+      <TopBar onMenuClick={() => setSidebarOpen((o) => !o)} />
 
       {/* Page header */}
       <div className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 shadow ml-[var(--sidebar-w)] transition-all duration-200">

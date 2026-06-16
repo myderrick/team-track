@@ -36,19 +36,6 @@ export function useUserProfile() {
         return;
       }
 
-      // Try to read from `profiles` (optional table)
-      let row = null;
-      try {
-        const { data } = await supabase
-          .from("profiles")
-          .select("id, full_name, avatar_url, title")
-          .eq("id", authUser.id)
-          .maybeSingle();
-        row = data || null;
-      } catch { /* profiles table may not exist; ignore */
-        row = null;
-       }
-
       // Try to get an employee row for this user (prefer an RPC with security definer)
       let emp = null;
       try {
@@ -69,18 +56,18 @@ export function useUserProfile() {
 
       const meta = authUser.user_metadata || {};
       const nameFallback =
-        row?.full_name ||
+        emp?.full_name ||
         meta.full_name ||
         meta.name ||
         (authUser.email ? authUser.email.split("@")[0] : "User");
 
       const avatarFallback =
-        row?.avatar_url ||
+        emp?.avatar_url ||
         meta.avatar_url ||
         meta.picture ||
         "";
 
-      const titleFallback = row?.title || meta.title || emp?.title || "";
+      const titleFallback = emp?.title || meta.title || "";
 
       if (alive) {
         setProfile({

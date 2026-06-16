@@ -2,10 +2,11 @@
 import React, { useState } from 'react';
 import { useNavigate } from "react-router-dom";
 import { supabase } from '../lib/supabaseClient';
-import { Menu, Search, Bell, Star, Globe } from 'lucide-react';
+import { Menu, Search, Star, Globe } from 'lucide-react';
 import Avatar from './Avatar';
 import { useUserProfile } from '../hooks/useUserProfile';
 import DarkModeSwitch from './DarkModeSwitch';
+import NotificationBell from './NotificationBell';
 
 export default function TopBar({ onMenuClick }) {
   const navigate = useNavigate();
@@ -69,20 +70,7 @@ export default function TopBar({ onMenuClick }) {
           <Star className="w-5 h-5" />
         </button>
 
-        <button
-          className="relative p-2 rounded-xl hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface)]"
-          type="button"
-          aria-label="Notifications"
-        >
-          <Bell className="w-5 h-5" />
-          <span
-            className="absolute -top-1 -right-1 inline-flex items-center justify-center
-                       h-5 min-w-[1.1rem] px-1.5 text-[10px] leading-none font-semibold
-                       text-white bg-red-600 rounded-full"
-          >
-            9
-          </span>
-        </button>
+        <NotificationBell />
       </div>
 
       {/* Right: user */}

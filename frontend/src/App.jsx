@@ -28,6 +28,9 @@ import '@/index.css';
 import StaffRegister from './pages/staff/Register';
 import ManagerReviewsPage from './pages/ManagerReviews';
 import Admin from '@/pages/Admin';
+import OneOnOnes from '@/pages/OneOnOnes';
+import Reports from '@/pages/Reports';
+import ReviewCycles from '@/pages/ReviewCycles';
 
 export default function App() {
   return (
@@ -64,8 +67,13 @@ export default function App() {
             <Route path="/staff/:employeeId" element={<StaffProfile />} />
             <Route path="/staff/self-review" element={<SelfReview />} />
             <Route path="/staff/goals" element={<StaffGoals />} />
+            <Route path="/staff/settings" element={<Settings />} />
             <Route path='/manager/reviews' element={<ManagerReviewsPage />} />
             <Route path="/admin" element={<Admin />} />
+            <Route path="/admin/cycles" element={<ReviewCycles />} />
+            <Route path="/one-on-ones" element={<OneOnOnes />} />
+            <Route path="/reports" element={<Reports />} />
+            <Route path="/staff/one-on-ones" element={<OneOnOnes />} />
            {/* <Route path="/staff/settings" element={<Settings staffMode />} /> */}
           </Route>
 

@@ -55,15 +55,15 @@ begin
   return query
     select
       e.id                                    as employee_id,
-      e.full_name,
-      e.email,
-      e.title,
-      e.department,
-      e.location,
+      e.full_name::text,
+      e.email::text,
+      e.title::text,
+      e.department::text,
+      e.location::text,
       e.manager_employee_id                   as manager_id,
-      mgr.full_name                           as manager_name,
+      mgr.full_name::text                     as manager_name,
       m.user_id,
-      m.role,
+      m.role::text,
       m.is_active,
       (m.user_id is not null)                 as linked
     from app.employees e

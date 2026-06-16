@@ -8,6 +8,7 @@ import EmptyState from '@/components/EmptyState';
 import { supabase } from '@/lib/supabaseClient';
 import UpdateProgressModal from '../../components/UpdateProgressModal';
 import { useNavigate } from 'react-router-dom';
+import { useOrg } from '@/context/OrgContext';
 
 function currentQuarterNumber(d = new Date()) {
   return Math.floor(d.getMonth() / 3) + 1;
@@ -95,6 +96,7 @@ const fmtMeasure = (n, unit, currency_code) => {
 export default function StaffDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const navigate = useNavigate();
+  const { isPrivileged } = useOrg();
 
 
   const yearOptions = useMemo(() => buildYearOptions({ years: 4 }), []);
@@ -293,17 +295,18 @@ setGoals(normalizedGoals);
           ) : (
             <>
 
-             <div className="flex justify-between items-center mb-4">
-          {/* Button to switch to /dashboard */}
-          <button
-            type="button"
-            onClick={() => navigate("/dashboard")}
-            className="mt-2 inline-flex items-center text-sm px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700"
-          >
-            Switch to Manager Dashboard
-          </button>
-
-          </div>
+             {isPrivileged && (
+               <div className="flex justify-between items-center mb-4">
+                 {/* Only managers/admins/owners can use the manager dashboard */}
+                 <button
+                   type="button"
+                   onClick={() => navigate("/dashboard")}
+                   className="mt-2 inline-flex items-center text-sm px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                 >
+                   Switch to Manager Dashboard
+                 </button>
+               </div>
+             )}
               {/* Profile strip */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
                 <div className="card p-5">

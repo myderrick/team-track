@@ -1,6 +1,6 @@
 // src/pages/Admin.jsx
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import Sidebar from '@/components/Sidebar';
 import TopBar from '@/components/TopBar';
 import EmptyState from '@/components/EmptyState';
@@ -156,7 +156,10 @@ export default function Admin() {
         <div className="flex items-center justify-between px-6 py-4 toolbar sticky top-14 z-10 shadow ml-[var(--sidebar-w)] transition-[margin] duration-200">
           <div>
             <h1 className="text-2xl font-bold">User Management</h1>
-            <p className="text-sm muted">Manage roles, access, and reporting lines for your organization.</p>
+            <p className="text-sm muted">
+              Manage roles, access, and reporting lines for your organization.
+              {' '}<Link to="/admin/cycles" className="text-[var(--accent)] hover:underline">Review cycles →</Link>
+            </p>
           </div>
           {isAdmin && (
             <div className="flex flex-wrap justify-end gap-3 items-center">

@@ -284,17 +284,17 @@ begin
   return query
   select
     e.id,
-    e.full_name,
-    e.department,
-    e.title,
-    case
+    e.full_name::text,
+    e.department::text,
+    e.title::text,
+    (case
       when bool_or(mr.submitted_at is not null) then 'finalized'
       when count(mr.id) > 0 then 'in_progress'
       else 'pending'
-    end as status,
+    end)::text as status,
     round(avg(mr.rating) filter (where mr.rating is not null) * 20)::numeric as score,
     max(mr.submitted_at) as submitted_at,
-    mgr.full_name as manager_name
+    mgr.full_name::text as manager_name
   from app.employees e
   left join app.manager_reviews mr
     on mr.employee_id = e.id and mr.cycle_id = v_cycle

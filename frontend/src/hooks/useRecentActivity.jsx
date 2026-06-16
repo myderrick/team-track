@@ -13,30 +13,11 @@ export function useRecentActivity({ orgId, limit = 20 }) {
       try {
         setLoading(true); setError('');
 
-        // 1) Pull recent activity rows
         const { data: rows, error: e1 } = await supabase
-          .schema('app')
-          .from('activity_log')
-          .select('id, action, entity_type, entity_id, details, occurred_at, actor_user_id, organization_id')
-          .eq('organization_id', orgId)
-          .order('occurred_at', { ascending: false })
-          .limit(limit);
+          .rpc('list_recent_activity', { p_org_id: orgId, p_limit: limit });
         if (e1) throw e1;
 
-        // 2) Resolve actor names
-        const actorIds = Array.from(new Set(rows.map(r => r.actor_user_id).filter(Boolean)));
-        let userMap = {};
-        if (actorIds.length) {
-          const { data: users, error: e2 } = await supabase
-            .schema('app')
-            .from('users')
-            .select('id, full_name')
-            .in('id', actorIds);
-          if (!e2 && users) users.forEach(u => (userMap[u.id] = u.full_name || ''));
-        }
-
-        // 3) Map to UI model
-        const mapped = rows.map(r => mapActivityRow(r, userMap));
+        const mapped = (rows || []).map(mapActivityRow);
         if (!cancel) setActivities(mapped);
       } catch (err) {
         if (!cancel) setError(err.message || 'Failed to load activity');
@@ -51,7 +32,7 @@ export function useRecentActivity({ orgId, limit = 20 }) {
 }
 
 // ---- Mapper tuned to your schema ----
-function mapActivityRow(row, userMap) {
+function mapActivityRow(row) {
   const action = (row.action || '').toLowerCase();
 
   // Try to derive a nice target title from details first
@@ -74,7 +55,7 @@ function mapActivityRow(row, userMap) {
   return {
     id: row.id,
     type,
-    actorName: userMap?.[row.actor_user_id] || d.actor_name || 'Someone',
+    actorName: row.actor_name || d.actor_name || 'Someone',
     targetTitle,
     timestampISO: row.occurred_at,
   };

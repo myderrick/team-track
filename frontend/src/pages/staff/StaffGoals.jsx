@@ -249,7 +249,7 @@ export default function StaffGoals() {
 
   const yearOptions = useMemo(() => buildYearOptions({ years: 4 }), []);
   const [year, setYear] = useState(new Date().getFullYear());
-  const [periodView, setPeriodView] = useState(`Q${currentQuarterNumber()}`);
+  const [periodView, setPeriodView] = useState('year');
   const quarter = periodView === 'year'
     ? quarterLabel(year, defaultQuarterForYear(year))
     : quarterLabel(year, Number(periodView.replace('Q', '')));

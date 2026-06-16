@@ -49,10 +49,10 @@ async function validateEmployeeEmail(email) {
 async function sendMagicLink({ email, redirectTo, joinCode, orgInfo }) {
   // Stash for callback *before* sending link
   if (orgInfo?.org_id) {
-    try { sessionStorage.setItem('expected_org_id', orgInfo.org_id); } catch {}
+    try { sessionStorage.setItem('expected_org_id', orgInfo.org_id); } catch { /* storage may be unavailable */ }
   }
   if (joinCode?.trim()) {
-    try { localStorage.setItem('pending_join_code', joinCode.trim()); } catch {}
+    try { localStorage.setItem('pending_join_code', joinCode.trim()); } catch { /* storage may be unavailable */ }
   }
 
   const { error } = await supabase.auth.signInWithOtp({
@@ -70,6 +70,7 @@ export default function StaffRegister() {
   const [joinCode, setJoinCode] = useState('');
 
   const [busy, setBusy] = useState(false);
+  const [resending, setResending] = useState(false);
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
 
@@ -153,10 +154,10 @@ async function handleSubmit(e) {
 
     // 🔐 Stash *before* auth so "already registered" also carries these to callback
     if (orgInfo?.org_id) {
-      try { sessionStorage.setItem('expected_org_id', orgInfo.org_id); } catch {}
+      try { sessionStorage.setItem('expected_org_id', orgInfo.org_id); } catch { /* storage may be unavailable */ }
     }
     if (joinCode.trim()) {
-      try { localStorage.setItem('pending_join_code', joinCode.trim()); } catch {}
+      try { localStorage.setItem('pending_join_code', joinCode.trim()); } catch { /* storage may be unavailable */ }
     }
 
     // 1) Try normal sign up
@@ -212,6 +213,38 @@ async function handleSubmit(e) {
   }
 }
 
+async function resendConfirmation() {
+  if (!isEmail(email)) {
+    setErr('Enter the work email you used to register.');
+    return;
+  }
+
+  setResending(true);
+  setErr('');
+  setMsg('');
+  try {
+    const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent('/staff')}`;
+    if (orgInfo?.org_id) {
+      try { sessionStorage.setItem('expected_org_id', orgInfo.org_id); } catch { /* storage may be unavailable */ }
+    }
+    if (joinCode.trim()) {
+      try { localStorage.setItem('pending_join_code', joinCode.trim()); } catch { /* storage may be unavailable */ }
+    }
+
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: email.trim(),
+      options: { emailRedirectTo: redirectTo },
+    });
+    if (error) throw error;
+    setMsg('Confirmation email resent. Check inbox, spam, and quarantine.');
+  } catch (e) {
+    setErr(String(e?.message || e));
+  } finally {
+    setResending(false);
+  }
+}
+
   return (
     <AuthLayout
       title="Create your staff account"
@@ -219,6 +252,16 @@ async function handleSubmit(e) {
     >
       <ErrorBanner message={err} />
       {msg && <div className="mb-3 text-green-700 bg-green-50 border border-green-200 rounded-lg p-3 text-sm">{msg}</div>}
+      {msg.toLowerCase().includes('confirm your email') && (
+        <button
+          type="button"
+          onClick={resendConfirmation}
+          disabled={resending}
+          className="mb-4 w-full rounded-xl border border-gray-300 bg-white py-2.5 text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+        >
+          {resending ? 'Resending…' : 'Resend confirmation email'}
+        </button>
+      )}
 
       {/* Live status chips */}
       <div className="flex flex-wrap gap-2 mb-4 text-xs">

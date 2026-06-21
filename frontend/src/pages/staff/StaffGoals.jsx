@@ -93,11 +93,22 @@ function goalMatchesYear(goal, year) {
 }
 
 const CATEGORIES = [
-  { value: 'development', label: 'Development Goal' },
-  { value: 'learning', label: 'Learning Goal' },
-  { value: 'growth', label: 'Growth Goal' },
+  { value: 'performance', label: 'Performance Goal' },
+  { value: 'learning_development_growth', label: 'Learning, Development & Growth Goal' },
   { value: 'other', label: 'Other Goal' },
 ];
+const LEGACY_LDG_CATEGORIES = new Set(['development', 'learning', 'growth']);
+const categoryLabel = (value) =>
+  CATEGORIES.find((c) => c.value === value)?.label || 'Other Goal';
+const categoryBucket = (value) =>
+  LEGACY_LDG_CATEGORIES.has(value) ? 'learning_development_growth' : (value || 'other');
+const addButtonLabel = (value) =>
+  value === 'learning_development_growth' ? 'Add LDG Goal' : `Add ${categoryLabel(value).replace(/ Goal$/, '')}`;
+const hasOrgAlignment = (goal) => {
+  if (goal?.org_goal_id) return true;
+  const label = String(goal?.org_goal_label || '').trim().toLowerCase();
+  return !!label && label !== 'none' && label !== 'unaligned';
+};
 
 const SUB_GOAL_STATUS_LABELS = {
   not_started: 'Not started',
@@ -181,9 +192,10 @@ const mapGoals = (rows = []) =>
     currency_code: g.currency ?? g.currency_code ?? null,
     target: g.target ?? g.target_value ?? null,
     self_selected: g.self_selected ?? g.meta?.self_selected === true,
-    category: g.category ?? g.meta?.category ?? 'other',
+    category: categoryBucket(g.category ?? g.meta?.category ?? 'other'),
     sub_goals: g.sub_goals || [],
-    org_goal_label: g.org_goal_label ?? g.alignment_label ?? null, // 👈 add this
+    org_goal_id: g.org_goal_id ?? g.goal_org_goal_id ?? g.meta?.org_goal_id ?? null,
+    org_goal_label: g.org_goal_label ?? g.alignment_label ?? g.meta?.alignment_label ?? null,
   }));
 
 async function attachSubGoals(rows = []) {
@@ -257,6 +269,7 @@ export default function StaffGoals() {
   const [err, setErr] = useState('');
 
   const [me, setMe] = useState(null);
+  const [staffOrgId, setStaffOrgId] = useState(null);
   const [goals, setGoals] = useState([]);
   const [latest, setLatest] = useState({}); // { goal_id: {value, measured_at} }
 
@@ -266,11 +279,37 @@ export default function StaffGoals() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
+  const [alignmentOptions, setAlignmentOptions] = useState([]);
+  const [alignmentLoading, setAlignmentLoading] = useState(false);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
     localStorage.setItem('darkMode', String(darkMode));
   }, [darkMode]);
+
+  useEffect(() => {
+    const orgId = staffOrgId;
+    if (!orgId) {
+      setAlignmentOptions([]);
+      return;
+    }
+
+    let cancel = false;
+    (async () => {
+      setAlignmentLoading(true);
+      const { data, error } = await supabase
+        .schema('public')
+        .rpc('org_goal_options', { p_org_id: orgId });
+      if (!cancel) {
+        setAlignmentOptions(error ? [] : (data || []));
+        setAlignmentLoading(false);
+      }
+    })();
+
+    return () => {
+      cancel = true;
+    };
+  }, [staffOrgId]);
 
   useEffect(() => {
     let cancel = false;
@@ -294,7 +333,8 @@ export default function StaffGoals() {
         if (cancel) return;
 
         const dashboards = results.map(r => r.data || {});
-        setMe(dashboards.find(d => d.me)?.me || null);
+        const dashboardMe = dashboards.find(d => d.me)?.me || null;
+        setMe(dashboardMe);
 
         const goalsById = new Map();
         dashboards.forEach(dashboard => {
@@ -303,6 +343,13 @@ export default function StaffGoals() {
           });
         });
         const mergedGoals = Array.from(goalsById.values());
+        setStaffOrgId(
+          dashboardMe?.organization_id ||
+          dashboardMe?.org_id ||
+          mergedGoals.find(goal => goal.organization_id || goal.org_id)?.organization_id ||
+          mergedGoals.find(goal => goal.organization_id || goal.org_id)?.org_id ||
+          null
+        );
         const visibleGoals = mergedGoals.filter(goal =>
           periodView === 'year'
             ? goalMatchesYear(goal, year)
@@ -334,10 +381,9 @@ export default function StaffGoals() {
 
   const groupedByOrgGoal = useMemo(() => {
   const groups = new Map(); // key => { label, items:[], pct:0..1|null }
-  const NONE = 'Unaligned';
 
-  (goals || []).forEach((g) => {
-    const key = g.org_goal_label || NONE;
+  (goals || []).filter(hasOrgAlignment).forEach((g) => {
+    const key = g.org_goal_label || 'Org Goal';
     if (!groups.has(key)) groups.set(key, { label: key, items: [] });
     groups.get(key).items.push(g);
   });
@@ -350,13 +396,8 @@ export default function StaffGoals() {
     grp.progress = pcts.length ? pcts.reduce((a, b) => a + b, 0) / pcts.length : null;
   }
 
-  // sort: alphabetical, but put Unaligned last
   const arr = Array.from(groups.values());
-  arr.sort((a, b) => {
-    if (a.label === 'Unaligned') return 1;
-    if (b.label === 'Unaligned') return -1;
-    return a.label.localeCompare(b.label);
-  });
+  arr.sort((a, b) => a.label.localeCompare(b.label));
   return arr;
 }, [goals, latest]);
 function Accordion({ children, className = '' }) {
@@ -484,17 +525,17 @@ function AccordionItem({
 }
 
   const myGoalsByCategory = useMemo(() => {
-    const out = { development: [], learning: [], growth: [], other: [] };
+    const out = { performance: [], learning_development_growth: [], other: [] };
     (goals || [])
-      .filter((g) => g.self_selected === true)
+      .filter((g) => g.self_selected === true && !hasOrgAlignment(g))
       .forEach((g) => {
-        const cat = g.category || 'other';
+        const cat = categoryBucket(g.category);
         (out[cat] ||= []).push(g);
       });
     return out;
   }, [goals]);
 
-  function openCreate(category = 'other') {
+  function openCreate(category = 'performance') {
     setEditing({
       id: null,
       title: '',
@@ -506,6 +547,7 @@ function AccordionItem({
       target: null,
       deadline: '',
       quarter,
+      org_goal_id: null,
     });
     setShowEditor(true);
   }
@@ -523,6 +565,7 @@ function AccordionItem({
       target: goal.target ?? null,
       deadline: goal.deadline || '',
       quarter: goal.quarter || quarter,
+      org_goal_id: goal.org_goal_id || null,
     });
     setShowEditor(true);
   }
@@ -551,6 +594,7 @@ function AccordionItem({
           p_deadline: editing.deadline || null,
           p_currency: payloadValues.currency,
           p_quarter: editing.quarter || quarter,
+          p_org_goal_id: editing.org_goal_id || null,
         });
         if (error) throw error;
         setToast('Goal added.');
@@ -566,6 +610,7 @@ function AccordionItem({
           p_target_value: payloadValues.targetValue,
           p_deadline: editing.deadline || null,
           p_currency: payloadValues.currency,
+          p_org_goal_id: editing.org_goal_id || null,
         });
         if (error) throw error;
         setToast('Goal updated.');
@@ -780,11 +825,7 @@ function AccordionItem({
         <AccordionItem
           key={grp.label || 'Unaligned'}
           title={grp.label || 'Unaligned'}
-          subtitle={
-            grp.label === 'Unaligned'
-              ? 'Goals without an org-level alignment'
-              : `${grp.items.length} goal${grp.items.length > 1 ? 's' : ''}`
-          }
+          subtitle={`${grp.items.length} goal${grp.items.length > 1 ? 's' : ''}`}
           progress={grp.progress}
           defaultOpen={idx === 0} // first group open by default
         >
@@ -826,22 +867,24 @@ function AccordionItem({
 
 
               {/* My self-created goals by category */}
-              {['development', 'learning', 'growth', 'other'].map((cat) => (
+              {CATEGORIES.map((category) => {
+                const cat = category.value;
+                return (
                 <section key={cat} className="card p-5 mb-6">
                   <div className="flex items-center justify-between mb-3">
                     <div className="text-lg font-semibold">
-                      {CATEGORIES.find((c) => c.value === cat)?.label || 'Other'}
+                      {category.label}
                     </div>
                     <button
                       onClick={() => openCreate(cat)}
                       className="px-3 py-1.5 rounded-lg bg-[var(--accent)] text-white hover:brightness-90"
                     >
-                      Add {CATEGORIES.find((c) => c.value === cat)?.label.split(' ')[0]}
+                      {addButtonLabel(cat)}
                     </button>
                   </div>
 
                   {myGoalsByCategory[cat].length === 0 ? (
-                    <EmptyState title={`No ${cat} goals`} />
+                    <EmptyState title={`No ${category.label.toLowerCase().replace(/ goal$/, '')} goals`} />
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="min-w-full text-sm">
@@ -868,7 +911,8 @@ function AccordionItem({
                     </div>
                   )}
                 </section>
-              ))}
+                );
+              })}
             </>
           )}
         </main>
@@ -1033,6 +1077,25 @@ function AccordionItem({
                 >
                   {quarterOptionsForYear(year).map((q) => (
                     <option key={q} value={q}>{q}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm mb-1">Align with org goal</label>
+                <select
+                  className="w-full border border-[var(--border)] rounded p-2 bg-[var(--card)]"
+                  value={editing.org_goal_id || ''}
+                  disabled={alignmentLoading}
+                  onChange={(e) =>
+                    setEditing((s) => ({ ...s, org_goal_id: e.target.value || null }))
+                  }
+                >
+                  <option value="">None</option>
+                  {alignmentOptions.map((goal) => (
+                    <option key={goal.id} value={goal.id}>
+                      {goal.label}
+                    </option>
                   ))}
                 </select>
               </div>
